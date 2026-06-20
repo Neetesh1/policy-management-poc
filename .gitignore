@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Test / sample files
+*.docx
+
+# Runtime data (documents + DB) — excluded from source control
+data/
+temp/
+
+# Environment secrets
+.env
+
+# macOS
+.DS_Store
+
+# Editor / IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test coverage
+coverage/

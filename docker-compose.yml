@@ -1,0 +1,48 @@
+services:
+  # ── ONLYOFFICE Document Server ──────────────────────────────────────────────
+  onlyoffice:
+    image: onlyoffice/documentserver:latest
+    container_name: onlyoffice-docs
+    ports:
+      - "8080:80"
+    environment:
+      JWT_ENABLED: "true"
+      JWT_SECRET: "${JWT_SECRET:-poc-secret-change-in-production}"
+      JWT_HEADER: "Authorization"
+      JWT_PREFIX: "Bearer"
+    volumes:
+      - onlyoffice_data:/var/www/onlyoffice/Data
+      - onlyoffice_log:/var/log/onlyoffice
+    restart: unless-stopped
+
+  # ── Node.js Application ─────────────────────────────────────────────────────
+  app:
+    build: .
+    container_name: onlyoffice-app
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+
+      # Public URL that the browser uses to reach this app
+      APP_URL: "http://localhost:3000"
+
+      # Internal URL that ONLYOFFICE server uses to fetch files & send callbacks
+      # Must use the Docker service name "app" so containers can reach each other
+      ONLYOFFICE_APP_URL: "http://app:3000"
+
+      # URL the browser uses to load the ONLYOFFICE editor API script
+      ONLYOFFICE_SERVER_URL: "http://localhost:8080"
+
+      JWT_SECRET: "${JWT_SECRET:-poc-secret-change-in-production}"
+    volumes:
+      # Persist documents and DB outside the container
+      - ./data:/app/data
+    depends_on:
+      - onlyoffice
+    restart: unless-stopped
+
+volumes:
+  onlyoffice_data:
+  onlyoffice_log:
