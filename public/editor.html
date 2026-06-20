@@ -49,6 +49,20 @@
     }
     #topbarRight { font-size: 11px; opacity: .6; white-space: nowrap; }
 
+    /* Role badge */
+    .role-badge {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 10px;
+      border-radius: 20px;
+      white-space: nowrap;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+    .role-editor   { background: rgba(255,255,255,.15); color: #fff; }
+    .role-reviewer { background: #f59e0b; color: #1a1a1a; }
+    .role-commenter { background: #38bdf8; color: #1a1a1a; }
+
     /* ── Editor container ── */
     #editorWrap {
       height: calc(100vh - 44px);
@@ -109,7 +123,10 @@
       &#8592; Document Manager
     </a>
     <span id="docTitle">Loading document&hellip;</span>
-    <span id="topbarRight">ONLYOFFICE POC</span>
+    <div style="display:flex;align-items:center;gap:8px">
+      <span id="roleBadge"></span>
+      <span id="topbarRight">ONLYOFFICE POC</span>
+    </div>
   </div>
 
   <!-- Editor wrapper -->
@@ -139,6 +156,16 @@
       const pathParts = window.location.pathname.split('/').filter(Boolean);
       const documentId = pathParts[pathParts.length - 1];
 
+      // Extract role from query string (?role=editor|reviewer|commenter)
+      const urlParams = new URLSearchParams(window.location.search);
+      const role = urlParams.get('role') || 'editor';
+
+      const ROLE_LABELS = {
+        editor:    { label: 'Editor',    cls: 'role-editor' },
+        reviewer:  { label: 'Reviewing', cls: 'role-reviewer' },
+        commenter: { label: 'Commenting', cls: 'role-commenter' }
+      };
+
       function showError(msg) {
         document.getElementById('loadingOverlay').classList.add('hidden');
         document.getElementById('errorMessage').textContent = msg;
@@ -157,8 +184,8 @@
           const appCfg = await cfgRes.json();
           const onlyofficeServerUrl = appCfg.onlyofficeServerUrl || 'http://localhost:8080';
 
-          // 2. Fetch ONLYOFFICE editor config (JWT-signed)
-          const editorCfgRes = await fetch(`/api/editor-config/${documentId}`);
+          // 2. Fetch ONLYOFFICE editor config (JWT-signed) with the selected role
+          const editorCfgRes = await fetch(`/api/editor-config/${documentId}?role=${encodeURIComponent(role)}`);
           if (!editorCfgRes.ok) {
             const err = await editorCfgRes.json().catch(() => ({}));
             throw new Error(err.error || `HTTP ${editorCfgRes.status}: could not load editor config.`);
@@ -169,6 +196,12 @@
           const title = (editorConfig.document && editorConfig.document.title) || 'Document';
           document.title = `${title} — ONLYOFFICE POC`;
           document.getElementById('docTitle').textContent = title;
+
+          // Show role badge in top bar
+          const roleMeta = ROLE_LABELS[editorConfig.role] || ROLE_LABELS.editor;
+          const badge = document.getElementById('roleBadge');
+          badge.textContent = roleMeta.label;
+          badge.className = `role-badge ${roleMeta.cls}`;
 
           // 3. Dynamically load the ONLYOFFICE API script from the Document Server
           const script = document.createElement('script');

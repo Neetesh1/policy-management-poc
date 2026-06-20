@@ -223,9 +223,41 @@
                     <td class="text-muted small">${fmtDate(doc.createdAt)}</td>
                     <td class="text-muted small">${fmtDate(doc.updatedAt)}</td>
                     <td class="text-end action-cell pe-1">
-                      <a href="/editor/${doc.id}" target="_blank" class="btn btn-sm btn-primary me-1">
-                        <i class="bi bi-pencil-square me-1"></i>Edit
-                      </a>
+                      <!-- Role selector split-button -->
+                      <div class="btn-group me-1" role="group">
+                        <a href="/editor/${doc.id}?role=editor" target="_blank"
+                           class="btn btn-sm btn-primary" title="Open as Editor">
+                          <i class="bi bi-pencil-square me-1"></i>Edit
+                        </a>
+                        <button type="button"
+                                class="btn btn-sm btn-primary dropdown-toggle dropdown-toggle-split"
+                                data-bs-toggle="dropdown" aria-expanded="false">
+                          <span class="visually-hidden">Select role</span>
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                          <li>
+                            <a class="dropdown-item" href="/editor/${doc.id}?role=editor" target="_blank">
+                              <i class="bi bi-pencil-square me-2 text-primary"></i>
+                              <strong>Editor</strong>
+                              <small class="d-block text-muted ms-4">Full editing access</small>
+                            </a>
+                          </li>
+                          <li>
+                            <a class="dropdown-item" href="/editor/${doc.id}?role=reviewer" target="_blank">
+                              <i class="bi bi-eye me-2 text-warning"></i>
+                              <strong>Reviewer</strong>
+                              <small class="d-block text-muted ms-4">Track changes only — no direct edits</small>
+                            </a>
+                          </li>
+                          <li>
+                            <a class="dropdown-item" href="/editor/${doc.id}?role=commenter" target="_blank">
+                              <i class="bi bi-chat-left-text me-2 text-info"></i>
+                              <strong>Commenter</strong>
+                              <small class="d-block text-muted ms-4">Add comments only</small>
+                            </a>
+                          </li>
+                        </ul>
+                      </div>
                       <a href="/download/${doc.id}" class="btn btn-sm btn-outline-secondary me-1">
                         <i class="bi bi-download me-1"></i>Download
                       </a>

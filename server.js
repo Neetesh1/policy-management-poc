@@ -58,6 +58,34 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // ── File-type helpers ─────────────────────────────────────────────────────────
 const ALLOWED_EXTENSIONS = new Set(['.docx', '.doc', '.pdf']);
+const VALID_ROLES = new Set(['editor', 'reviewer', 'commenter']);
+
+/**
+ * Maps a role name to ONLYOFFICE permissions + mode.
+ *
+ * editor    — full editing (default)
+ * reviewer  — tracked changes only; changes are highlighted for the editor to accept/reject
+ * commenter — add comments only; cannot change document content
+ */
+function getRoleConfig(role) {
+  switch (role) {
+    case 'reviewer':
+      return {
+        mode: 'edit',
+        permissions: { edit: false, review: true, comment: true, download: true, print: true, fillForms: false }
+      };
+    case 'commenter':
+      return {
+        mode: 'edit',
+        permissions: { edit: false, review: false, comment: true, download: true, print: true, fillForms: false }
+      };
+    default: // editor
+      return {
+        mode: 'edit',
+        permissions: { edit: true, review: true, comment: true, download: true, print: true, fillForms: true }
+      };
+  }
+}
 
 function getDocMeta(ext) {
   switch (ext) {
@@ -209,6 +237,11 @@ app.get('/api/editor-config/:documentId', validateDocId, (req, res) => {
 
   if (!doc) return res.status(404).json({ error: 'Document not found' });
 
+  // Sanitise & resolve role — defaults to 'editor' for unknown/missing values
+  const rawRole = req.query.role;
+  const role = VALID_ROLES.has(rawRole) ? rawRole : 'editor';
+  const { mode, permissions } = getRoleConfig(role);
+
   // Short-lived token so ONLYOFFICE can fetch the file
   const fileToken = jwt.sign(
     { documentId, action: 'read', version: doc.currentVersion },
@@ -224,11 +257,12 @@ app.get('/api/editor-config/:documentId', validateDocId, (req, res) => {
       title: doc.title,
       url: `${ONLYOFFICE_APP_URL}/file/${documentId}?token=${encodeURIComponent(fileToken)}`,
       // Key must be unique per version; changing it forces ONLYOFFICE to reload the doc
-      key: `${documentId.replace(/-/g, '')}_v${doc.currentVersion}`
+      key: `${documentId.replace(/-/g, '')}_v${doc.currentVersion}`,
+      permissions
     },
     documentType,
     editorConfig: {
-      mode: 'edit',
+      mode,
       callbackUrl: `${ONLYOFFICE_APP_URL}/onlyoffice/callback/${documentId}`,
       user: { id: 'user-001', name: 'POC User' },
       customization: { autosave: true, forcesave: false }
@@ -237,7 +271,7 @@ app.get('/api/editor-config/:documentId', validateDocId, (req, res) => {
 
   // Sign the entire payload so ONLYOFFICE can verify it hasn't been tampered with
   const token = jwt.sign(configPayload, JWT_SECRET);
-  res.json({ ...configPayload, token });
+  res.json({ ...configPayload, token, role });
 });
 
 /**
