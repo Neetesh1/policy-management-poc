@@ -56,14 +56,36 @@ const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// ── File-type helpers ─────────────────────────────────────────────────────────
+const ALLOWED_EXTENSIONS = new Set(['.docx', '.doc', '.pdf']);
+
+function getDocMeta(ext) {
+  switch (ext) {
+    case '.pdf':
+      return { fileType: 'pdf', documentType: 'pdf', mimeType: 'application/pdf' };
+    case '.doc':
+      return { fileType: 'doc', documentType: 'word', mimeType: 'application/msword' };
+    default: // .docx
+      return {
+        fileType: 'docx',
+        documentType: 'word',
+        mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      };
+  }
+}
+
 // ── Multer setup ───────────────────────────────────────────────────────────────
 const upload = multer({
   dest: TEMP_PATH,
   limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB
   fileFilter: (_req, file, cb) => {
-    if (path.extname(file.originalname).toLowerCase() !== '.docx') {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (!ALLOWED_EXTENSIONS.has(ext)) {
       return cb(
-        Object.assign(new Error('Only .docx files are allowed'), { code: 'INVALID_TYPE' })
+        Object.assign(
+          new Error('Only .docx, .doc and .pdf files are allowed'),
+          { code: 'INVALID_TYPE' }
+        )
       );
     }
     cb(null, true);
@@ -116,10 +138,11 @@ app.post('/upload', upload.single('file'), (req, res) => {
 
   try {
     const docId = uuidv4();
+    const ext = path.extname(req.file.originalname).toLowerCase();
     const docDir = safePath(STORAGE_PATH, docId, 'versions');
     fs.mkdirSync(docDir, { recursive: true });
 
-    const destPath = path.join(docDir, 'v1.docx');
+    const destPath = path.join(docDir, `v1${ext}`);
     fs.copyFileSync(req.file.path, destPath);
     fs.unlinkSync(req.file.path);
 
@@ -130,6 +153,7 @@ app.post('/upload', upload.single('file'), (req, res) => {
     const doc = {
       id: docId,
       title: req.file.originalname,
+      extension: ext,
       createdAt: now,
       updatedAt: now,
       currentVersion: 1,
@@ -192,15 +216,17 @@ app.get('/api/editor-config/:documentId', validateDocId, (req, res) => {
     { expiresIn: '2h' }
   );
 
+  const { fileType, documentType } = getDocMeta(doc.extension || '.docx');
+
   const configPayload = {
     document: {
-      fileType: 'docx',
+      fileType,
       title: doc.title,
       url: `${ONLYOFFICE_APP_URL}/file/${documentId}?token=${encodeURIComponent(fileToken)}`,
       // Key must be unique per version; changing it forces ONLYOFFICE to reload the doc
       key: `${documentId.replace(/-/g, '')}_v${doc.currentVersion}`
     },
-    documentType: 'word',
+    documentType,
     editorConfig: {
       mode: 'edit',
       callbackUrl: `${ONLYOFFICE_APP_URL}/onlyoffice/callback/${documentId}`,
@@ -237,13 +263,12 @@ app.get('/file/:documentId', validateDocId, (req, res) => {
   const latest = doc.versions.find(v => v.versionNo === doc.currentVersion);
   if (!latest) return res.status(404).json({ error: 'File metadata not found' });
 
-  const filePath = safePath(STORAGE_PATH, documentId, 'versions', `v${latest.versionNo}.docx`);
+  const ext = doc.extension || '.docx';
+  const filePath = safePath(STORAGE_PATH, documentId, 'versions', `v${latest.versionNo}${ext}`);
   if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found on disk' });
 
-  res.setHeader(
-    'Content-Type',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-  );
+  const { mimeType } = getDocMeta(ext);
+  res.setHeader('Content-Type', mimeType);
   res.download(filePath, doc.title);
 });
 
@@ -290,7 +315,8 @@ app.post('/onlyoffice/callback/:documentId', validateDocId, async (req, res) => 
       const docDir = safePath(STORAGE_PATH, documentId, 'versions');
       fs.mkdirSync(docDir, { recursive: true });
 
-      const newFilePath = path.join(docDir, `v${newVersionNo}.docx`);
+      const ext = doc.extension || '.docx';
+      const newFilePath = path.join(docDir, `v${newVersionNo}${ext}`);
       fs.writeFileSync(newFilePath, fileResponse.data);
 
       const fileHash = crypto.createHash('sha256').update(fileResponse.data).digest('hex');
@@ -362,7 +388,8 @@ app.get('/download/:documentId', validateDocId, (req, res) => {
   const latest = doc.versions.find(v => v.versionNo === doc.currentVersion);
   if (!latest) return res.status(404).json({ error: 'File not found' });
 
-  const filePath = safePath(STORAGE_PATH, documentId, 'versions', `v${latest.versionNo}.docx`);
+  const ext = doc.extension || '.docx';
+  const filePath = safePath(STORAGE_PATH, documentId, 'versions', `v${latest.versionNo}${ext}`);
   if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found on disk' });
 
   res.download(filePath, doc.title);
@@ -387,11 +414,12 @@ app.get('/download-version/:documentId/:versionNo', validateDocId, (req, res) =>
   const version = doc.versions.find(v => v.versionNo === versionNumber);
   if (!version) return res.status(404).json({ error: 'Version not found' });
 
-  const filePath = safePath(STORAGE_PATH, documentId, 'versions', `v${versionNumber}.docx`);
+  const ext = doc.extension || '.docx';
+  const filePath = safePath(STORAGE_PATH, documentId, 'versions', `v${versionNumber}${ext}`);
   if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Version file not found on disk' });
 
-  const baseName = path.basename(doc.title, '.docx');
-  res.download(filePath, `${baseName}_v${versionNumber}.docx`);
+  const baseName = path.basename(doc.title, ext);
+  res.download(filePath, `${baseName}_v${versionNumber}${ext}`);
 });
 
 // ── Error handler ──────────────────────────────────────────────────────────────
