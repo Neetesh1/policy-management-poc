@@ -39,11 +39,41 @@
 
   <!-- Header -->
   <header class="app-header mb-4">
-    <div class="container d-flex align-items-center gap-3">
-      <i class="bi bi-file-earmark-word fs-2"></i>
-      <div>
-        <h1 class="h4 mb-0 fw-bold">Document Manager</h1>
-        <p class="mb-0 small opacity-75">ONLYOFFICE POC — Upload · Edit · Version</p>
+    <div class="container d-flex align-items-center justify-content-between gap-3 flex-wrap">
+      <div class="d-flex align-items-center gap-3">
+        <i class="bi bi-file-earmark-word fs-2"></i>
+        <div>
+          <h1 class="h4 mb-0 fw-bold">Document Manager</h1>
+          <p class="mb-0 small opacity-75">ONLYOFFICE POC — Upload · Edit · Version</p>
+        </div>
+      </div>
+      <!-- User Switcher -->
+      <div class="d-flex align-items-center gap-2">
+        <span class="small opacity-75">Viewing as:</span>
+        <div class="dropdown">
+          <button class="btn btn-light btn-sm dropdown-toggle fw-semibold" type="button"
+                  id="userSwitcherBtn" data-bs-toggle="dropdown" aria-expanded="false">
+            <i class="bi bi-person-circle me-1"></i><span id="currentUserLabel">POC User 1</span>
+          </button>
+          <ul class="dropdown-menu dropdown-menu-end shadow-sm" id="userDropdown">
+            <li><h6 class="dropdown-header">Switch User</h6></li>
+            <li>
+              <a class="dropdown-item user-option" href="#" data-user-id="poc-user-1">
+                <i class="bi bi-person me-2 text-primary"></i><strong>POC User 1</strong>
+              </a>
+            </li>
+            <li>
+              <a class="dropdown-item user-option" href="#" data-user-id="poc-user-2">
+                <i class="bi bi-person me-2 text-success"></i><strong>POC User 2</strong>
+              </a>
+            </li>
+            <li>
+              <a class="dropdown-item user-option" href="#" data-user-id="poc-user-3">
+                <i class="bi bi-person me-2 text-warning"></i><strong>POC User 3</strong>
+              </a>
+            </li>
+          </ul>
+        </div>
       </div>
     </div>
   </header>
@@ -118,6 +148,38 @@
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script>
+    // ── POC User management ─────────────────────────────────────────────────────
+    const POC_USERS = {
+      'poc-user-1': 'POC User 1',
+      'poc-user-2': 'POC User 2',
+      'poc-user-3': 'POC User 3'
+    };
+
+    function getCurrentUser() {
+      return localStorage.getItem('pocUserId') || 'poc-user-1';
+    }
+
+    function setCurrentUser(userId) {
+      localStorage.setItem('pocUserId', userId);
+      const label = POC_USERS[userId] || 'POC User 1';
+      document.getElementById('currentUserLabel').textContent = label;
+      // Re-render document list so editor links pick up new user
+      loadDocuments();
+    }
+
+    function initUserSwitcher() {
+      const userId = getCurrentUser();
+      const label = POC_USERS[userId] || 'POC User 1';
+      document.getElementById('currentUserLabel').textContent = label;
+
+      document.querySelectorAll('.user-option').forEach(el => {
+        el.addEventListener('click', e => {
+          e.preventDefault();
+          setCurrentUser(el.dataset.userId);
+        });
+      });
+    }
+
     function getAllowedExtensions() { return ['.docx', '.doc', '.pdf']; }
 
     function fileIcon(title) {
@@ -225,7 +287,7 @@
                     <td class="text-end action-cell pe-1">
                       <!-- Role selector split-button -->
                       <div class="btn-group me-1" role="group">
-                        <a href="/editor/${doc.id}?role=editor" target="_blank"
+                        <a href="/editor/${doc.id}?role=editor&user=${getCurrentUser()}" target="_blank"
                            class="btn btn-sm btn-primary" title="Open as Editor">
                           <i class="bi bi-pencil-square me-1"></i>Edit
                         </a>
@@ -236,21 +298,21 @@
                         </button>
                         <ul class="dropdown-menu dropdown-menu-end shadow-sm">
                           <li>
-                            <a class="dropdown-item" href="/editor/${doc.id}?role=editor" target="_blank">
+                            <a class="dropdown-item" href="/editor/${doc.id}?role=editor&user=${getCurrentUser()}" target="_blank">
                               <i class="bi bi-pencil-square me-2 text-primary"></i>
                               <strong>Editor</strong>
                               <small class="d-block text-muted ms-4">Full editing access</small>
                             </a>
                           </li>
                           <li>
-                            <a class="dropdown-item" href="/editor/${doc.id}?role=reviewer" target="_blank">
+                            <a class="dropdown-item" href="/editor/${doc.id}?role=reviewer&user=${getCurrentUser()}" target="_blank">
                               <i class="bi bi-eye me-2 text-warning"></i>
                               <strong>Reviewer</strong>
                               <small class="d-block text-muted ms-4">Track changes only — no direct edits</small>
                             </a>
                           </li>
                           <li>
-                            <a class="dropdown-item" href="/editor/${doc.id}?role=commenter" target="_blank">
+                            <a class="dropdown-item" href="/editor/${doc.id}?role=commenter&user=${getCurrentUser()}" target="_blank">
                               <i class="bi bi-chat-left-text me-2 text-info"></i>
                               <strong>Commenter</strong>
                               <small class="d-block text-muted ms-4">Add comments only</small>
@@ -349,6 +411,7 @@
     }
 
     // Initial load
+    initUserSwitcher();
     loadDocuments();
   </script>
 </body>

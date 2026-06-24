@@ -72,6 +72,30 @@ docker compose up --build
 
 ---
 
+## Deploy to Firebase
+
+Yes, this POC can be deployed with Firebase by using **Firebase Hosting + Cloud Run**:
+
+- `onlyoffice-app` (Node.js app) on Cloud Run
+- `onlyoffice-docs` (ONLYOFFICE Document Server) on Cloud Run
+- Firebase Hosting rewrite to `onlyoffice-app`
+
+Use the full deployment guide in [docs/firebase-deployment.md](docs/firebase-deployment.md).
+
+Included helper files:
+
+- `firebase.json`
+- `.firebaserc.example`
+
+### Deploy From GitHub (recommended)
+
+If you do not want local `gcloud` / `firebase` CLIs, use GitHub Actions deployment.
+
+- Workflow: `.github/workflows/deploy-firebase.yml`
+- Setup guide: [docs/github-actions-deploy.md](docs/github-actions-deploy.md)
+
+---
+
 ## Local Development (without Docker)
 
 1. Install and run [ONLYOFFICE Document Server](https://helpcenter.onlyoffice.com/installation/docs-community-install-ubuntu.aspx) on port 8080.

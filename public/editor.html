@@ -159,6 +159,7 @@
       // Extract role from query string (?role=editor|reviewer|commenter)
       const urlParams = new URLSearchParams(window.location.search);
       const role = urlParams.get('role') || 'editor';
+      const user = urlParams.get('user') || 'poc-user-1';
 
       const ROLE_LABELS = {
         editor:    { label: 'Editor',    cls: 'role-editor' },
@@ -184,8 +185,8 @@
           const appCfg = await cfgRes.json();
           const onlyofficeServerUrl = appCfg.onlyofficeServerUrl || 'http://localhost:8080';
 
-          // 2. Fetch ONLYOFFICE editor config (JWT-signed) with the selected role
-          const editorCfgRes = await fetch(`/api/editor-config/${documentId}?role=${encodeURIComponent(role)}`);
+          // 2. Fetch ONLYOFFICE editor config (JWT-signed) with the selected role and user
+          const editorCfgRes = await fetch(`/api/editor-config/${documentId}?role=${encodeURIComponent(role)}&user=${encodeURIComponent(user)}`);
           if (!editorCfgRes.ok) {
             const err = await editorCfgRes.json().catch(() => ({}));
             throw new Error(err.error || `HTTP ${editorCfgRes.status}: could not load editor config.`);
@@ -202,6 +203,11 @@
           const badge = document.getElementById('roleBadge');
           badge.textContent = roleMeta.label;
           badge.className = `role-badge ${roleMeta.cls}`;
+
+          // Show user name in top bar
+          if (editorConfig.user && editorConfig.user.name) {
+            document.getElementById('topbarRight').textContent = editorConfig.user.name;
+          }
 
           // 3. Dynamically load the ONLYOFFICE API script from the Document Server
           const script = document.createElement('script');

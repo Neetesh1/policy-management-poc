@@ -60,6 +60,14 @@ app.use(express.static(path.join(__dirname, 'public')));
 const ALLOWED_EXTENSIONS = new Set(['.docx', '.doc', '.pdf']);
 const VALID_ROLES = new Set(['editor', 'reviewer', 'commenter']);
 
+// ── POC Users ──────────────────────────────────────────────────────────────────
+const POC_USERS = {
+  'poc-user-1': { id: 'poc-user-1', name: 'POC User 1' },
+  'poc-user-2': { id: 'poc-user-2', name: 'POC User 2' },
+  'poc-user-3': { id: 'poc-user-3', name: 'POC User 3' }
+};
+const DEFAULT_USER = POC_USERS['poc-user-1'];
+
 /**
  * Maps a role name to ONLYOFFICE permissions + mode.
  *
@@ -242,6 +250,10 @@ app.get('/api/editor-config/:documentId', validateDocId, (req, res) => {
   const role = VALID_ROLES.has(rawRole) ? rawRole : 'editor';
   const { mode, permissions } = getRoleConfig(role);
 
+  // Resolve POC user — defaults to poc-user-1 for unknown/missing values
+  const rawUser = req.query.user;
+  const pocUser = POC_USERS[rawUser] || DEFAULT_USER;
+
   // Short-lived token so ONLYOFFICE can fetch the file
   const fileToken = jwt.sign(
     { documentId, action: 'read', version: doc.currentVersion },
@@ -264,14 +276,20 @@ app.get('/api/editor-config/:documentId', validateDocId, (req, res) => {
     editorConfig: {
       mode,
       callbackUrl: `${ONLYOFFICE_APP_URL}/onlyoffice/callback/${documentId}`,
-      user: { id: 'user-001', name: 'POC User' },
-      customization: { autosave: true, forcesave: false }
+      user: { id: pocUser.id, name: pocUser.name },
+      customization: { autosave: true, forcesave: false, uiTheme: 'theme-policy-poc' },
+      plugins: {
+        autostart: [],
+        pluginsData: [
+          `${APP_URL}/plugins/content-controls-tags/config.json`
+        ]
+      }
     }
   };
 
   // Sign the entire payload so ONLYOFFICE can verify it hasn't been tampered with
   const token = jwt.sign(configPayload, JWT_SECRET);
-  res.json({ ...configPayload, token, role });
+  res.json({ ...configPayload, token, role, user: pocUser });
 });
 
 /**

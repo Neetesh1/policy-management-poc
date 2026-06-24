@@ -1,0 +1,108 @@
+name: Deploy to Firebase and Cloud Run
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      REGION: ${{ vars.GCP_REGION }}
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate required secrets
+        run: |
+          if [ -z "$PROJECT_ID" ]; then
+            echo "Missing secret: GCP_PROJECT_ID"
+            exit 1
+          fi
+          if [ -z "$JWT_SECRET" ]; then
+            echo "Missing secret: JWT_SECRET"
+            exit 1
+          fi
+          if [ -z "${{ secrets.GCP_SA_KEY }}" ]; then
+            echo "Missing secret: GCP_SA_KEY"
+            exit 1
+          fi
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up gcloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Enable required APIs
+        run: |
+          gcloud services enable \
+            run.googleapis.com \
+            cloudbuild.googleapis.com \
+            artifactregistry.googleapis.com \
+            firebasehosting.googleapis.com
+
+      - name: Deploy ONLYOFFICE service
+        id: deploy_onlyoffice
+        run: |
+          REGION="${REGION:-us-central1}"
+          ONLYOFFICE_URL="$(gcloud run deploy onlyoffice-docs \
+            --image onlyoffice/documentserver:latest \
+            --region "$REGION" \
+            --platform managed \
+            --allow-unauthenticated \
+            --port 80 \
+            --cpu 2 \
+            --memory 4Gi \
+            --set-env-vars "JWT_ENABLED=true,JWT_SECRET=$JWT_SECRET,JWT_HEADER=Authorization,JWT_PREFIX=Bearer" \
+            --format='value(status.url)')"
+
+          echo "onlyoffice_url=$ONLYOFFICE_URL" >> "$GITHUB_OUTPUT"
+          echo "ONLYOFFICE_URL=$ONLYOFFICE_URL" >> "$GITHUB_ENV"
+
+      - name: Deploy application service
+        id: deploy_app
+        run: |
+          REGION="${REGION:-us-central1}"
+          APP_URL="$(gcloud run deploy onlyoffice-app \
+            --source . \
+            --region "$REGION" \
+            --platform managed \
+            --allow-unauthenticated \
+            --set-env-vars "NODE_ENV=production,JWT_SECRET=$JWT_SECRET,ONLYOFFICE_SERVER_URL=$ONLYOFFICE_URL" \
+            --format='value(status.url)')"
+
+          gcloud run services update onlyoffice-app \
+            --region "$REGION" \
+            --set-env-vars "NODE_ENV=production,JWT_SECRET=$JWT_SECRET,ONLYOFFICE_SERVER_URL=$ONLYOFFICE_URL,APP_URL=$APP_URL,ONLYOFFICE_APP_URL=$APP_URL"
+
+          echo "app_url=$APP_URL" >> "$GITHUB_OUTPUT"
+          echo "APP_URL=$APP_URL" >> "$GITHUB_ENV"
+
+      - name: Deploy Firebase Hosting
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.GCP_SA_KEY }}
+          channelId: live
+          projectId: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Print deployment endpoints
+        run: |
+          echo "Cloud Run app URL: $APP_URL"
+          echo "ONLYOFFICE URL: $ONLYOFFICE_URL"
+          echo "Firebase Hosting deployed to project: $PROJECT_ID"
