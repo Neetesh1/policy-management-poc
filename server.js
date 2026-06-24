@@ -277,7 +277,7 @@ app.get('/api/editor-config/:documentId', validateDocId, (req, res) => {
       mode,
       callbackUrl: `${ONLYOFFICE_APP_URL}/onlyoffice/callback/${documentId}`,
       user: { id: pocUser.id, name: pocUser.name },
-      customization: { autosave: true, forcesave: false, uiTheme: 'theme-policy-poc' },
+      customization: { autosave: true, forcesave: false },
       plugins: {
         autostart: [],
         pluginsData: [

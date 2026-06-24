@@ -13,7 +13,6 @@ services:
     volumes:
       - onlyoffice_data:/var/www/onlyoffice/Data
       - onlyoffice_log:/var/log/onlyoffice
-      - ./themes/policy-poc.json:/var/www/onlyoffice/documentserver/web-apps/apps/common/main/resources/themes/policy-poc.json:ro
     restart: unless-stopped
 
   # ── Node.js Application ─────────────────────────────────────────────────────
