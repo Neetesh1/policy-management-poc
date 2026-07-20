@@ -20,20 +20,21 @@ services:
     build: .
     container_name: onlyoffice-app
     ports:
-      - "4205:3000"
+      - "4211:3000"
     environment:
       NODE_ENV: production
       PORT: "3000"
 
       # Public URL that the browser uses to reach this app
-      APP_URL: "http://localhost:3000"
+      APP_URL: "http://localhost:4211"
 
       # Internal URL that ONLYOFFICE server uses to fetch files & send callbacks
       # Must use the Docker service name "app" so containers can reach each other
       ONLYOFFICE_APP_URL: "http://app:3000"
 
       # URL the browser uses to load the ONLYOFFICE editor API script
-      ONLYOFFICE_SERVER_URL: "http://localhost:8080"
+      # For remote access, set this to your server's IP or hostname + port 3005
+      ONLYOFFICE_SERVER_URL: "http://10.112.5.69:3005"
 
       JWT_SECRET: "${JWT_SECRET:-poc-secret-change-in-production}"
     volumes:
