@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            font-family: "Segoe UI", Arial, sans-serif;
+            background: #f7f9fc;
+        }
+
+        .wrap {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 12px;
+            box-sizing: border-box;
+        }
+
+        .actions {
+            display: flex;
+            flex-direction: row;
+            gap: 10px;
+            width: 100%;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .action-btn {
+            border: 1px solid #d0d7e2;
+            background: #ffffff;
+            color: #1b2b4b;
+            border-radius: 8px;
+            padding: 8px 12px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            min-width: 130px;
+        }
+
+        .action-btn:hover {
+            background: #eef4ff;
+            border-color: #8ab4ff;
+        }
+    </style>
+    <script type="text/javascript" src="https://onlyoffice.github.io/sdkjs-plugins/v1/plugins.js"></script>
+    <script type="text/javascript" src="scripts/code.js"></script>
+</head>
+<body>
+    <div class="wrap">
+        <div class="actions">
+            <button id="flagBtn" class="action-btn" type="button">Flag for Review</button>
+            <button id="compliantBtn" class="action-btn" type="button">Mark as Compliant</button>
+            <button id="copyBtn" class="action-btn" type="button">Copy Selected Text</button>
+        </div>
+    </div>
+</body>
+</html>

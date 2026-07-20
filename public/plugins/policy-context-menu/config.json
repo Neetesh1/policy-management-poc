@@ -1,0 +1,28 @@
+{
+    "name": "Policy Actions",
+    "guid": "asc.{B2C4D6E8-F0A1-4B3C-9D5E-7F8A9B0C1D2E}",
+
+    "variations": [
+        {
+            "description": "Policy Actions",
+            "url": "index.html",
+
+            "icons": [],
+            "isViewer": false,
+            "EditorsSupport": ["word"],
+
+            "isVisual": false,
+            "isModal": false,
+            "isInsideMode": true,
+
+            "initDataType": "none",
+            "initData": "",
+
+            "isUpdateOleOnResize": false,
+            "buttons": [],
+
+            "contextMenu": true,
+            "events": ["onContextMenuShow"]
+        }
+    ]
+}

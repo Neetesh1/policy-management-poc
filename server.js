@@ -281,7 +281,8 @@ app.get('/api/editor-config/:documentId', validateDocId, (req, res) => {
       plugins: {
         autostart: [],
         pluginsData: [
-          `${APP_URL}/plugins/content-controls-tags/config.json`
+          `${APP_URL}/plugins/content-controls-tags/config.json`,
+          `${APP_URL}/plugins/policy-context-menu/config.json`
         ]
       }
     }
