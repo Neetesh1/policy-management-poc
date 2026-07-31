@@ -1,24 +1,28 @@
 (function (window, undefined) {
     'use strict';
 
+    // Wraps the whole paragraph under the cursor in a block-level content control (ApiBlockLvlSdt)
+    // via the Document Builder API, so the tag survives as part of the .docx itself.
     function addTagToSelection(tagValue, commentText) {
-        var controlId = Date.now();
+        window.Asc.scope.tagValue = tagValue;
+        window.Asc.scope.commentText = commentText;
 
-        window.Asc.plugin.executeMethod('AddContentControl', [1, {
-            Id: controlId,
-            Lock: 0,
-            Tag: tagValue,
-            Alias: tagValue,
-            Appearance: 1
-        }], function () {
-            window.Asc.plugin.executeMethod('AddComment', [{
-                Text: commentText,
-                UserName: 'Policy System',
-                UserId: 'policy-system',
-                Time: Date.now(),
-                Solved: false
-            }]);
-        });
+        window.Asc.plugin.callCommand(function () {
+            var oDocument = Api.GetDocument();
+            var oRange = oDocument.GetRangeBySelect();
+            var oParagraph = oRange.GetParagraph(0);
+
+            if (!oParagraph) {
+                return;
+            }
+
+            oRange.AddComment(Asc.scope.commentText, 'Policy System');
+
+            var blockLvlSdt = Api.CreateBlockLvlSdt();
+            blockLvlSdt.SetTag(Asc.scope.tagValue);
+            blockLvlSdt.Push(oParagraph);
+            oDocument.InsertContent([blockLvlSdt], { KeepTextOnly: false });
+        }, false);
     }
 
     function buildMenuItems(options) {
