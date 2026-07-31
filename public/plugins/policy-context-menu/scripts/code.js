@@ -8,20 +8,26 @@
         window.Asc.scope.commentText = commentText;
 
         window.Asc.plugin.callCommand(function () {
-            var oDocument = Api.GetDocument();
-            var oRange = oDocument.GetRangeBySelect();
-            var oParagraph = oRange.GetParagraph(0);
+            try {
+                var oDocument = Api.GetDocument();
+                var oRange = oDocument.GetRangeBySelect();
+                var oParagraph = oRange ? oRange.GetParagraph(0) : null;
 
-            if (!oParagraph) {
-                return;
+                if (!oParagraph) {
+                    console.warn('[Policy Tagging] No paragraph found — place the cursor inside a paragraph and try again.');
+                    return;
+                }
+
+                oRange.AddComment(Asc.scope.commentText, 'Policy System');
+
+                // Paragraph is already part of the document tree, so it must be wrapped in place
+                // rather than pushed into a freshly created content control (Push/InsertContent
+                // only works for detached elements not yet added to the document).
+                var blockLvlSdt = oParagraph.InsertInContentControl(1);
+                blockLvlSdt.SetTag(Asc.scope.tagValue);
+            } catch (e) {
+                console.error('[Policy Tagging] Failed to tag paragraph:', e);
             }
-
-            oRange.AddComment(Asc.scope.commentText, 'Policy System');
-
-            var blockLvlSdt = Api.CreateBlockLvlSdt();
-            blockLvlSdt.SetTag(Asc.scope.tagValue);
-            blockLvlSdt.Push(oParagraph);
-            oDocument.InsertContent([blockLvlSdt], { KeepTextOnly: false });
         }, false);
     }
 
