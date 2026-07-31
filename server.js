@@ -54,6 +54,17 @@ function safePath(base, ...parts) {
 // ── Express app ────────────────────────────────────────────────────────────────
 const app = express();
 app.use(express.json());
+
+// ONLYOFFICE Document Server fetches plugin assets cross-origin (browser-side),
+// so CORS must be allowed explicitly or plugins.js fails to load config.json.
+app.use('/plugins', (req, res, next) => {
+  res.header('Access-Control-Allow-Origin', ONLYOFFICE_SERVER_URL);
+  res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ── File-type helpers ─────────────────────────────────────────────────────────
