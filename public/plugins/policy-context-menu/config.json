@@ -11,7 +11,7 @@
             "isViewer": false,
             "EditorsSupport": ["word"],
 
-            "isVisual": false,
+            "isVisual": true,
             "isModal": false,
             "isInsideMode": true,
 

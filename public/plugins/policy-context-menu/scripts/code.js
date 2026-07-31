@@ -1,11 +1,19 @@
 (function (window, undefined) {
     'use strict';
 
+    // Highlight colors so tagged paragraphs are visually distinguishable at a glance.
+    var TAG_COLORS = {
+        'needs-review': [255, 235, 156],
+        'compliant': [198, 239, 206],
+        'custom': [198, 224, 255]
+    };
+
     // Wraps the whole paragraph under the cursor in a block-level content control (ApiBlockLvlSdt)
     // via the Document Builder API, so the tag survives as part of the .docx itself.
-    function addTagToSelection(tagValue, commentText) {
+    function addTagToSelection(tagValue, commentText, colorKey) {
         window.Asc.scope.tagValue = tagValue;
         window.Asc.scope.commentText = commentText;
+        window.Asc.scope.color = TAG_COLORS[colorKey] || TAG_COLORS.custom;
 
         window.Asc.plugin.callCommand(function () {
             try {
@@ -19,6 +27,10 @@
                 }
 
                 oRange.AddComment(Asc.scope.commentText, 'Policy System');
+
+                // Shade the paragraph background so the tag is visible without opening the tags panel.
+                var c = Asc.scope.color;
+                oParagraph.SetShd('clear', Api.RGB(c[0], c[1], c[2]));
 
                 // Paragraph is already part of the document tree, so it must be wrapped in place
                 // rather than pushed into a freshly created content control (Push/InsertContent
@@ -54,10 +66,6 @@
                         {
                             id: 'policy_tag_compliant',
                             text: 'Tag Paragraph: Compliant'
-                        },
-                        {
-                            id: 'policy_tag_custom',
-                            text: 'Tag Paragraph: Custom...'
                         }
                     ]
                 }
@@ -65,21 +73,20 @@
         };
     }
 
-    function addCustomTagToSelection() {
-        var tagName = window.prompt('Enter a custom tag name for the selected paragraph:');
-        if (!tagName) {
-            return;
-        }
-        tagName = tagName.trim();
-        if (!tagName) {
-            return;
-        }
-
-        addTagToSelection('{policy:' + tagName + '}', '[POLICY TAG] Paragraph tagged as "' + tagName + '"');
-    }
-
     window.Asc.plugin.init = function () {
-        // No visual UI. This plugin only contributes right-click actions.
+        var input = document.getElementById('customTagInput');
+        var btn = document.getElementById('customTagBtn');
+
+        btn.onclick = function () {
+            var tagName = (input.value || '').trim();
+            if (!tagName) {
+                input.focus();
+                return;
+            }
+
+            addTagToSelection('{policy:' + tagName + '}', '[POLICY TAG] Paragraph tagged as "' + tagName + '"', 'custom');
+            input.value = '';
+        };
     };
 
     window.Asc.plugin.button = function () {};
@@ -94,15 +101,11 @@
     });
 
     window.Asc.plugin.attachContextMenuClickEvent('policy_tag_review', function () {
-        addTagToSelection('{policy:needs-review}', '[POLICY TAG] Paragraph tagged as Needs Review');
+        addTagToSelection('{policy:needs-review}', '[POLICY TAG] Paragraph tagged as Needs Review', 'needs-review');
     });
 
     window.Asc.plugin.attachContextMenuClickEvent('policy_tag_compliant', function () {
-        addTagToSelection('{policy:compliant}', '[POLICY TAG] Paragraph tagged as Compliant');
-    });
-
-    window.Asc.plugin.attachContextMenuClickEvent('policy_tag_custom', function () {
-        addCustomTagToSelection();
+        addTagToSelection('{policy:compliant}', '[POLICY TAG] Paragraph tagged as Compliant', 'compliant');
     });
 
 })(window, undefined);
