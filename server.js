@@ -277,9 +277,25 @@ app.get('/api/editor-config/:documentId', validateDocId, (req, res) => {
       mode,
       callbackUrl: `${ONLYOFFICE_APP_URL}/onlyoffice/callback/${documentId}`,
       user: { id: pocUser.id, name: pocUser.name },
-      customization: { autosave: true, forcesave: false },
+      customization: {
+        autosave: true,
+        forcesave: false,
+        // Hide every toolbar tab except "File" — right-click tagging still works without them
+        toolbarTabs: {
+          file: true,
+          home: false,
+          insert: false,
+          layout: false,
+          references: false,
+          collaboration: false,
+          protection: false,
+          plugins: false,
+          draw: false
+        }
+      },
       plugins: {
-        autostart: [],
+        // Auto-open the tags panel so previously-added paragraph tags are visible on load
+        autostart: ['asc.{C36DDFB5-08F0-4A68-B829-5FB1F7D49331}'],
         pluginsData: [
           `${APP_URL}/plugins/content-controls-tags/config.json`,
           `${APP_URL}/plugins/policy-context-menu/config.json`

@@ -44,11 +44,28 @@
                         {
                             id: 'policy_tag_compliant',
                             text: 'Tag Paragraph: Compliant'
+                        },
+                        {
+                            id: 'policy_tag_custom',
+                            text: 'Tag Paragraph: Custom...'
                         }
                     ]
                 }
             ]
         };
+    }
+
+    function addCustomTagToSelection() {
+        var tagName = window.prompt('Enter a custom tag name for the selected paragraph:');
+        if (!tagName) {
+            return;
+        }
+        tagName = tagName.trim();
+        if (!tagName) {
+            return;
+        }
+
+        addTagToSelection('{policy:' + tagName + '}', '[POLICY TAG] Paragraph tagged as "' + tagName + '"');
     }
 
     window.Asc.plugin.init = function () {
@@ -72,6 +89,10 @@
 
     window.Asc.plugin.attachContextMenuClickEvent('policy_tag_compliant', function () {
         addTagToSelection('{policy:compliant}', '[POLICY TAG] Paragraph tagged as Compliant');
+    });
+
+    window.Asc.plugin.attachContextMenuClickEvent('policy_tag_custom', function () {
+        addCustomTagToSelection();
     });
 
 })(window, undefined);
