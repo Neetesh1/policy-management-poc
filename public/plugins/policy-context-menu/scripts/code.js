@@ -26,7 +26,12 @@
                     return;
                 }
 
-                oRange.AddComment(Asc.scope.commentText, 'Policy System');
+                // Comment is best-effort audit trail; its failure must not block the visible tag/highlight.
+                try {
+                    oRange.AddComment(Asc.scope.commentText, 'Policy System');
+                } catch (commentErr) {
+                    console.warn('[Policy Tagging] Could not add audit comment:', commentErr);
+                }
 
                 // Shade the paragraph background so the tag is visible without opening the tags panel.
                 var c = Asc.scope.color;
