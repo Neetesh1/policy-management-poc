@@ -11,6 +11,8 @@ temp/
 # Environment secrets
 .env
 
+# ONLYOFFICE Developer Edition license
+license.lic
 
 # macOS
 .DS_Store
