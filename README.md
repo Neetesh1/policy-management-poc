@@ -50,6 +50,12 @@ cd onlyoffice-node-poc
 cp .env.example .env          # review defaults; change JWT_SECRET
 ```
 
+Place your ONLYOFFICE Docs Developer Edition trial license as `license.lic` in the
+project root — `docker-compose.yml` mounts it read-only into the Document Server
+container at `/var/www/onlyoffice/Data/license.lic` (per the
+[activation guide](https://helpcenter.onlyoffice.com/docs/installation/docs-developer-activation.aspx)).
+It is git-ignored and never committed.
+
 ### 2 — Start all services
 
 ```bash
@@ -145,6 +151,34 @@ If you do not want local `gcloud` / `firebase` CLIs, use GitHub Actions deployme
 | `GET` | `/download/:documentId` | Download latest version |
 | `GET` | `/download-version/:documentId/:versionNo` | Download a specific version |
 | `GET` | `/api/config` | Frontend configuration (ONLYOFFICE URL) |
+| `GET` | `/automation/policy-info-panel.html` | Connector-window panel opened from the "Policy Tools" toolbar tab (Automation API) |
+| `POST` | `/api/audit-event/:documentId` | Records a client-reported Automation API event (tag change, comment lifecycle, review accept/reject) into the audit trail |
+
+---
+
+## White-label branding vs. Automation API
+
+Two different premium ONLYOFFICE Docs Developer features are wired into this POC — they are **not** interchangeable:
+
+| | White-label branding | Automation API |
+|---|---|---|
+| Config surface | `editorConfig.customization` (`about`, `loaderName`, `loaderLogo`, `layout.*`) | `docEditor.createConnector()` client-side |
+| What it does | Toggle/hide native ONLYOFFICE chrome (logo, loader text, toolbar tabs) | Add **new** custom UI (toolbar tabs, context menu items, modal windows) and read/write document content from outside the editor |
+| License required | Extended white-label license | Automation API license (separate add-on) |
+| Behavior without the license | Silently ignored — no error | `createConnector()`/`addToolbarMenuItem()` may throw or no-op; wrapped in try/catch with a console warning |
+| Implemented here | `server.js` sets `about`, `loaderName`, optional `loaderLogo` via env vars | `public/editor.html` adds a "Policy Tools" toolbar tab that opens `public/automation/policy-info-panel.html` in a connector window |
+
+**Automation API cannot hide/replace native toolbar tabs or the loading logo** — that part still requires the white-label license. If neither license is present on your trial server, check the browser console for `[Automation API]` warnings to confirm which parts are actually active.
+
+### Revision tracking & paragraph tagging via the connector
+
+Building on the [Connector class](https://api.onlyoffice.com/docs/docs-api/usage-api/automation-api/connector-class/) and [Document API Events](https://api.onlyoffice.com/docs/plugins/interacting-with-editors/document-api/Events/) docs, `public/editor.html` wires the connector to:
+
+- `attachEvent('onChangeContentControl', ...)` — detects edits to tagged paragraphs (content controls) in real time and reports `CONTENT_CONTROL_CHANGED` to `/api/audit-event/:documentId`.
+- `attachEvent('onAddComment' | 'onChangeCommentData' | 'onRemoveComment', ...)` — logs the full comment lifecycle live, instead of only on document save.
+- "Accept All Changes" / "Reject All Changes" toolbar buttons (editor/reviewer roles only) — call `executeMethod('AcceptReviewChanges' | 'RejectReviewChanges', [])` and log `REVIEW_CHANGES_ACCEPTED`/`REVIEW_CHANGES_REJECTED`.
+
+**Known limitation**: there is no Document API event that fires per individual tracked-change edit (author/timestamp/diff text), only comment events and bulk accept/reject/navigate methods (`AcceptReviewChanges`, `RejectReviewChanges`, `MoveToNextReviewChange`). A structured, change-by-change revision feed ("who changed exactly what text, when") is **not** exposed by this API surface and would still require diffing saved versions server-side.
 
 ---
 

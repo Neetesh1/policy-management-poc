@@ -19,6 +19,13 @@ const ONLYOFFICE_APP_URL = process.env.ONLYOFFICE_APP_URL || APP_URL;
 const ONLYOFFICE_SERVER_URL = process.env.ONLYOFFICE_SERVER_URL || 'http://localhost:8080';
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
+// White-label branding (https://api.onlyoffice.com/docs/docs-api/usage-api/config/editor/customization/customization-white-label/)
+// NOTE: these fields require the "extended white label license" add-on for ONLYOFFICE Docs Developer —
+// on a trial/Community-tier server they are silently ignored (canBranding check fails server-side).
+const WHITE_LABEL_LOADER_NAME = process.env.WHITE_LABEL_LOADER_NAME || 'Loading policy document…';
+const WHITE_LABEL_LOADER_LOGO_URL = process.env.WHITE_LABEL_LOADER_LOGO_URL || '';
+const WHITE_LABEL_SHOW_ABOUT = process.env.WHITE_LABEL_SHOW_ABOUT !== 'false';
+
 const DATA_PATH = path.resolve(process.env.DATA_PATH || path.join(__dirname, 'data'));
 const DB_PATH = path.join(DATA_PATH, 'db.json');
 const STORAGE_PATH = path.join(DATA_PATH, 'documents');
@@ -291,8 +298,12 @@ app.get('/api/editor-config/:documentId', validateDocId, (req, res) => {
       customization: {
         autosave: true,
         forcesave: false,
-        // NOTE: hiding toolbar tabs (customization.layout.toolbar.*) requires a commercial
-        // ONLYOFFICE branding license — Community Edition ignores it silently, so it's omitted here.
+        // White-label branding — requires the extended white-label license; no-ops otherwise.
+        about: WHITE_LABEL_SHOW_ABOUT,
+        loaderName: WHITE_LABEL_LOADER_NAME,
+        ...(WHITE_LABEL_LOADER_LOGO_URL ? { loaderLogo: WHITE_LABEL_LOADER_LOGO_URL } : {})
+        // NOTE: hiding toolbar tabs (customization.layout.toolbar.*) requires the same commercial
+        // white-label license — Community Edition ignores it silently, so it's omitted here.
       },
       plugins: {
         // Both plugins must autostart: non-visual context-menu plugins still need their init()
@@ -422,6 +433,58 @@ app.post('/onlyoffice/callback/:documentId', validateDocId, async (req, res) => 
   }
 
   res.json({ error: 0 });
+});
+
+// Automation API-reported events we allow into the audit trail (see public/editor.html
+// initAutomationConnector). Whitelisted to prevent arbitrary/unbounded client input.
+const ALLOWED_AUTOMATION_ACTIONS = new Set([
+  'CONTENT_CONTROL_CHANGED',
+  'COMMENT_ADDED',
+  'COMMENT_CHANGED',
+  'COMMENT_REMOVED',
+  'REVIEW_CHANGES_ACCEPTED',
+  'REVIEW_CHANGES_REJECTED'
+]);
+
+/**
+ * POST /api/audit-event/:documentId
+ * Records a client-side Automation API event (paragraph tag change, comment
+ * lifecycle, review accept/reject) into the document's audit trail, so it shows
+ * up in the /versions revision history alongside upload/save events.
+ * https://api.onlyoffice.com/docs/docs-api/usage-api/automation-api/connector-class/
+ * https://api.onlyoffice.com/docs/plugins/interacting-with-editors/document-api/Events/
+ */
+app.post('/api/audit-event/:documentId', validateDocId, (req, res) => {
+  const { documentId } = req.params;
+  const { action, userId, meta } = req.body || {};
+
+  if (!ALLOWED_AUTOMATION_ACTIONS.has(action)) {
+    return res.status(400).json({ error: 'Invalid or unsupported action' });
+  }
+
+  const db = readDB();
+  const doc = db.documents.find(d => d.id === documentId);
+  if (!doc) return res.status(404).json({ error: 'Document not found' });
+
+  // Re-serialize meta through JSON to strip functions/prototypes and cap size.
+  let safeMeta;
+  try {
+    const str = JSON.stringify(meta);
+    if (str && str.length <= 2000) safeMeta = JSON.parse(str);
+  } catch {
+    safeMeta = undefined;
+  }
+
+  doc.audit.push({
+    action,
+    versionNo: doc.currentVersion,
+    userId: typeof userId === 'string' ? userId.slice(0, 100) : 'unknown',
+    meta: safeMeta,
+    timestamp: new Date().toISOString()
+  });
+  writeDB(db);
+
+  res.json({ success: true });
 });
 
 /**

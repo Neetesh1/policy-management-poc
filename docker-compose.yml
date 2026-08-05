@@ -1,7 +1,8 @@
 services:
   # ── ONLYOFFICE Document Server ──────────────────────────────────────────────
   onlyoffice:
-    image: onlyoffice/documentserver:latest
+    # Developer Edition image — required for license.lic activation to take effect
+    image: onlyoffice/documentserver-de:latest
     container_name: onlyoffice-docs
     ports:
       - "3005:80"
@@ -13,6 +14,8 @@ services:
     volumes:
       - onlyoffice_data:/var/www/onlyoffice/Data
       - onlyoffice_log:/var/log/onlyoffice
+      # Developer Edition trial license (see https://helpcenter.onlyoffice.com/docs/installation/docs-developer-activation.aspx)
+      - ./license.lic:/var/www/onlyoffice/Data/license.lic:ro
     restart: unless-stopped
 
   # ── Node.js Application ─────────────────────────────────────────────────────

@@ -177,6 +177,135 @@
         document.getElementById('loadingOverlay').classList.add('hidden');
       }
 
+      // ── Automation API (custom branded toolbar tab + info panel) ────────────────
+      // https://api.onlyoffice.com/docs/docs-api/usage-api/automation-api/
+      // https://api.onlyoffice.com/docs/docs-api/usage-api/automation-api/connector-class/
+      // Automation API is a separate premium feature from white-label branding: it can't
+      // toggle/hide native ONLYOFFICE chrome, but it can add our own custom UI elements,
+      // listen to Document API events (https://api.onlyoffice.com/docs/plugins/interacting-with-editors/document-api/Events/)
+      // and call Document API methods from outside the editor.
+      let automationConnector = null;
+
+      // Reports a connector-observed event to the server-side audit trail so it
+      // shows up in the revision history alongside upload/save events.
+      function reportAuditEvent(action, userId, meta) {
+        fetch(`/api/audit-event/${documentId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action, userId, meta })
+        }).catch(err => console.warn('[Automation API] failed to report audit event:', err));
+      }
+
+      function initAutomationConnector(docEditorInstance, meta) {
+        if (!docEditorInstance || typeof docEditorInstance.createConnector !== 'function') return;
+
+        try {
+          automationConnector = docEditorInstance.createConnector();
+        } catch (err) {
+          console.warn('[Automation API] createConnector() failed — likely not licensed on this Document Server:', err);
+          return;
+        }
+
+        const userId = (meta.user && meta.user.id) || 'unknown';
+        const isReviewCapableRole = meta.role === 'editor' || meta.role === 'reviewer';
+
+        // ── Paragraph tagging: detect edits to tagged content controls in real time ──
+        try {
+          automationConnector.attachEvent('onChangeContentControl', (obj) => {
+            reportAuditEvent('CONTENT_CONTROL_CHANGED', userId, { tag: obj && obj.tag, id: obj && obj.id });
+          });
+        } catch (err) {
+          console.warn('[Automation API] attachEvent(onChangeContentControl) failed:', err);
+        }
+
+        // ── Revision tracking: comment lifecycle events feed the audit trail live ──
+        try {
+          automationConnector.attachEvent('onAddComment', (obj) => {
+            reportAuditEvent('COMMENT_ADDED', userId, { commentId: obj && obj.Id });
+          });
+          automationConnector.attachEvent('onChangeCommentData', (obj) => {
+            reportAuditEvent('COMMENT_CHANGED', userId, { commentId: obj && obj.Id });
+          });
+          automationConnector.attachEvent('onRemoveComment', (obj) => {
+            reportAuditEvent('COMMENT_REMOVED', userId, { commentIds: obj });
+          });
+        } catch (err) {
+          console.warn('[Automation API] attachEvent(comment events) failed:', err);
+        }
+
+        const toolbarItems = [{
+          id: 'policyToolsInfoBtn',
+          type: 'button',
+          text: 'Document Info',
+          hint: 'Show policy document metadata (via Automation API)',
+          onClick: () => showPolicyInfoPanel(meta)
+        }];
+
+        // ── Revision tracking: accept/reject tracked changes from outside the editor ──
+        // https://api.onlyoffice.com/docs/plugins/interacting-with-editors/document-api/Methods/
+        if (isReviewCapableRole) {
+          toolbarItems.push(
+            {
+              id: 'policyAcceptChangesBtn',
+              type: 'button',
+              text: 'Accept All Changes',
+              hint: 'Accept all tracked changes (Automation API: AcceptReviewChanges)',
+              onClick: () => {
+                automationConnector.executeMethod('AcceptReviewChanges', [], () => {
+                  reportAuditEvent('REVIEW_CHANGES_ACCEPTED', userId, {});
+                });
+              }
+            },
+            {
+              id: 'policyRejectChangesBtn',
+              type: 'button',
+              text: 'Reject All Changes',
+              hint: 'Reject all tracked changes (Automation API: RejectReviewChanges)',
+              onClick: () => {
+                automationConnector.executeMethod('RejectReviewChanges', [], () => {
+                  reportAuditEvent('REVIEW_CHANGES_REJECTED', userId, {});
+                });
+              }
+            }
+          );
+        }
+
+        try {
+          automationConnector.addToolbarMenuItem({
+            guid: 'asc.policy-management-automation-api',
+            tabs: [{
+              id: 'policyToolsTab',
+              text: 'Policy Tools',
+              items: toolbarItems
+            }]
+          });
+        } catch (err) {
+          console.warn('[Automation API] addToolbarMenuItem() failed:', err);
+        }
+      }
+
+      function showPolicyInfoPanel(meta) {
+        if (!automationConnector) return;
+        try {
+          const params = new URLSearchParams({
+            title: meta.title || '',
+            role: (meta.role || 'editor'),
+            userName: (meta.user && meta.user.name) || ''
+          });
+          const win = automationConnector.createWindow();
+          win.show({
+            url: `/automation/policy-info-panel.html?${params.toString()}`,
+            description: 'Policy Document Info',
+            type: 'panel',
+            EditorsSupport: ['word'],
+            isVisual: true,
+            buttons: []
+          });
+        } catch (err) {
+          console.warn('[Automation API] createWindow()/show() failed:', err);
+        }
+      }
+
       async function initEditor() {
         try {
           // 1. Fetch app config (ONLYOFFICE server URL)
@@ -209,6 +338,14 @@
             document.getElementById('topbarRight').textContent = editorConfig.user.name;
           }
 
+          // Automation API (https://api.onlyoffice.com/docs/docs-api/usage-api/automation-api/) is a
+          // separate premium feature from white-label branding — it lets us add custom toolbar/UI
+          // elements from outside the editor rather than toggle native chrome. Wired up once the
+          // document is ready; functions can't travel through the signed JSON config, so it's attached here.
+          editorConfig.events = {
+            onDocumentReady: () => initAutomationConnector(docEditorInstance, { title, role: editorConfig.role, user: editorConfig.user })
+          };
+
           // 3. Dynamically load the ONLYOFFICE API script from the Document Server
           const script = document.createElement('script');
           script.src = `${onlyofficeServerUrl}/web-apps/apps/api/documents/api.js`;
@@ -221,10 +358,11 @@
             );
           };
 
+          let docEditorInstance = null;
           script.onload = () => {
             hideLoading();
             // eslint-disable-next-line no-undef
-            new DocsAPI.DocEditor('placeholder', editorConfig);
+            docEditorInstance = new DocsAPI.DocEditor('placeholder', editorConfig);
           };
 
           document.head.appendChild(script);
