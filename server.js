@@ -509,6 +509,51 @@ app.post('/api/audit-event/:documentId', validateDocId, (req, res) => {
 });
 
 /**
+ * POST /api/tags/:documentId
+ * Persists structured paragraph-tag metadata (key, color, content control id) in
+ * the custom DB instead of a Word comment, linked to the document via documentId
+ * and to the specific paragraph via the content control's InternalId.
+ */
+app.post('/api/tags/:documentId', validateDocId, (req, res) => {
+  const { documentId } = req.params;
+  const { tagKey, colorKey, contentControlId, userId } = req.body || {};
+
+  if (typeof tagKey !== 'string' || !tagKey.trim()) {
+    return res.status(400).json({ error: 'tagKey is required' });
+  }
+
+  const db = readDB();
+  const doc = db.documents.find(d => d.id === documentId);
+  if (!doc) return res.status(404).json({ error: 'Document not found' });
+
+  const tag = {
+    id: uuidv4(),
+    tagKey: tagKey.slice(0, 200),
+    colorKey: typeof colorKey === 'string' ? colorKey.slice(0, 50) : 'custom',
+    contentControlId: contentControlId != null ? String(contentControlId).slice(0, 100) : null,
+    userId: typeof userId === 'string' ? userId.slice(0, 100) : 'unknown',
+    createdAt: new Date().toISOString()
+  };
+
+  doc.tags = doc.tags || [];
+  doc.tags.push(tag);
+  writeDB(db);
+
+  res.json({ success: true, tag });
+});
+
+/**
+ * GET /api/tags/:documentId
+ * Returns all tags recorded against a document.
+ */
+app.get('/api/tags/:documentId', validateDocId, (req, res) => {
+  const db = readDB();
+  const doc = db.documents.find(d => d.id === req.params.documentId);
+  if (!doc) return res.status(404).json({ error: 'Document not found' });
+  res.json(doc.tags || []);
+});
+
+/**
  * GET /versions/:documentId
  * Returns the full version history and audit log for a document.
  */

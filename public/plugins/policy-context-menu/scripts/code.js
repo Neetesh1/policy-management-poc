@@ -10,9 +10,8 @@
 
     // Wraps the whole paragraph under the cursor in a block-level content control (ApiBlockLvlSdt)
     // via the Document Builder API, so the tag survives as part of the .docx itself.
-    function addTagToSelection(tagValue, commentText, colorKey) {
+    function addTagToSelection(tagValue, colorKey) {
         window.Asc.scope.tagValue = tagValue;
-        window.Asc.scope.commentText = commentText;
         window.Asc.scope.color = TAG_COLORS[colorKey] || TAG_COLORS.custom;
 
         window.Asc.plugin.callCommand(function () {
@@ -26,12 +25,8 @@
                     return;
                 }
 
-                // Comment is best-effort audit trail; its failure must not block the visible tag/highlight.
-                try {
-                    oRange.AddComment(Asc.scope.commentText, 'Policy System');
-                } catch (commentErr) {
-                    console.warn('[Policy Tagging] Could not add audit comment:', commentErr);
-                }
+                // Audit trail (who/when/label) is persisted server-side via onChangeContentControl
+                // in editor.html rather than as an in-document Word comment.
 
                 // Shade the paragraph background so the tag is visible without opening the tags panel.
                 var c = Asc.scope.color;
@@ -89,7 +84,7 @@
                 return;
             }
 
-            addTagToSelection('{policy:' + tagName + '}', '[POLICY TAG] Paragraph tagged as "' + tagName + '"', 'custom');
+            addTagToSelection('{policy:' + tagName + '}', 'custom');
             input.value = '';
         };
     };
@@ -106,11 +101,11 @@
     });
 
     window.Asc.plugin.attachContextMenuClickEvent('policy_tag_review', function () {
-        addTagToSelection('{policy:needs-review}', '[POLICY TAG] Paragraph tagged as Needs Review', 'needs-review');
+        addTagToSelection('{policy:needs-review}', 'needs-review');
     });
 
     window.Asc.plugin.attachContextMenuClickEvent('policy_tag_compliant', function () {
-        addTagToSelection('{policy:compliant}', '[POLICY TAG] Paragraph tagged as Compliant', 'compliant');
+        addTagToSelection('{policy:compliant}', 'compliant');
     });
 
 })(window, undefined);

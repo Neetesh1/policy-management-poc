@@ -196,6 +196,22 @@
         }).catch(err => console.warn('[Automation API] failed to report audit event:', err));
       }
 
+      // Persists structured tag metadata (key/color/content-control id) to the custom DB,
+      // linked to this document via documentId — replaces the old in-doc Word comment.
+      const POLICY_TAG_COLORS = new Set(['needs-review', 'compliant']);
+      function persistPolicyTag(obj, userId) {
+        const match = /^\{policy:(.+)\}$/.exec((obj && obj.tag) || '');
+        if (!match) return;
+
+        const tagKey = match[1];
+        const colorKey = POLICY_TAG_COLORS.has(tagKey) ? tagKey : 'custom';
+        fetch(`/api/tags/${documentId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tagKey, colorKey, contentControlId: obj.id, userId })
+        }).catch(err => console.warn('[Policy Tagging] failed to persist tag:', err));
+      }
+
       function initAutomationConnector(docEditorInstance, meta) {
         if (!docEditorInstance || typeof docEditorInstance.createConnector !== 'function') return;
 
@@ -213,6 +229,7 @@
         try {
           automationConnector.attachEvent('onChangeContentControl', (obj) => {
             reportAuditEvent('CONTENT_CONTROL_CHANGED', userId, { tag: obj && obj.tag, id: obj && obj.id });
+            persistPolicyTag(obj, userId);
           });
         } catch (err) {
           console.warn('[Automation API] attachEvent(onChangeContentControl) failed:', err);

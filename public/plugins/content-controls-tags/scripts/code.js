@@ -45,6 +45,9 @@
                         fClickLabel = true;
                         $('.label-selected').removeClass('label-selected');
                         $(this).addClass('label-selected');
+                        // Jump to and select the first content control matching this tag,
+                        // so clicking a label actually navigates to the tagged paragraph.
+                        window.Asc.plugin.executeMethod("SelectContentControl", [arrEl.id[0]]);
                     },
                     mouseover: function() {
                         $(this).addClass('label-hovered');
