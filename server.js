@@ -298,12 +298,23 @@ app.get('/api/editor-config/:documentId', validateDocId, (req, res) => {
       customization: {
         autosave: true,
         forcesave: false,
+        // Standard branding (no premium license needed): collapses the ribbon to just the
+        // tab row by default; clicking a tab expands its buttons for that session.
+        compactToolbar: true,
         // White-label branding — requires the extended white-label license; no-ops otherwise.
         about: WHITE_LABEL_SHOW_ABOUT,
         loaderName: WHITE_LABEL_LOADER_NAME,
-        ...(WHITE_LABEL_LOADER_LOGO_URL ? { loaderLogo: WHITE_LABEL_LOADER_LOGO_URL } : {})
-        // NOTE: hiding toolbar tabs (customization.layout.toolbar.*) requires the same commercial
-        // white-label license — Community Edition ignores it silently, so it's omitted here.
+        ...(WHITE_LABEL_LOADER_LOGO_URL ? { loaderLogo: WHITE_LABEL_LOADER_LOGO_URL } : {}),
+        // Hiding specific toolbar tabs (Plugins/Protection/View) requires the same commercial
+        // white-label license as the fields above — silently ignored without it (e.g. an
+        // expired/missing license.lic). Home cannot be hidden per the ONLYOFFICE docs.
+        layout: {
+          toolbar: {
+            plugins: false,
+            protect: false,
+            view: false
+          }
+        }
       },
       plugins: {
         // Both plugins must autostart: non-visual context-menu plugins still need their init()
@@ -311,6 +322,11 @@ app.get('/api/editor-config/:documentId', validateDocId, (req, res) => {
         autostart: [
           'asc.{C36DDFB5-08F0-4A68-B829-5FB1F7D49331}',
           'asc.{B2C4D6E8-F0A1-4B3C-9D5E-7F8A9B0C1D2E}'
+        ],
+        // Disables the built-in AI plugin/toolbar tab (bundled since ONLYOFFICE Docs 9.0.4).
+        // plugins.disable requires no license — it fully blocks the plugin, not just hides UI.
+        disable: [
+          'asc.{9DC93CDB-B576-4F0C-B55E-FCC9C48DD007}'
         ],
         pluginsData: [
           `${APP_URL}/plugins/content-controls-tags/config.json`,

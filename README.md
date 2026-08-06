@@ -170,6 +170,15 @@ Two different premium ONLYOFFICE Docs Developer features are wired into this POC
 
 **Automation API cannot hide/replace native toolbar tabs or the loading logo** — that part still requires the white-label license. If neither license is present on your trial server, check the browser console for `[Automation API]` warnings to confirm which parts are actually active.
 
+### Compact toolbar & hiding toolbar tabs
+
+`server.js` sets two more `customization` fields on top of the above:
+
+- `compactToolbar: true` — **standard branding**, works on every edition (no license needed). Collapses the ribbon to just the tab row; clicking a tab expands its buttons for that session, matching the "Home only by default, expand on demand" behavior.
+- `layout.toolbar.{plugins,protect,view}: false` — hides the Plugins/Protection/View tabs entirely. This is **white-label** config (same license as above) — it no-ops on an unlicensed or expired-license server. `home` cannot be hidden per the ONLYOFFICE docs. There is no standard "AI" tab in `layout.toolbar` because it isn't native chrome — it's a bundled **plugin** (see below).
+
+The visible **AI** tab comes from ONLYOFFICE's built-in AI plugin, bundled since Docs 9.0.4 (guid `{9DC93CDB-B576-4F0C-B55E-FCC9C48DD007}`). It's disabled via `editorConfig.plugins.disable`, which requires **no license** — it fully blocks the plugin rather than just hiding its UI.
+
 ### Revision tracking & paragraph tagging via the connector
 
 Building on the [Connector class](https://api.onlyoffice.com/docs/docs-api/usage-api/automation-api/connector-class/) and [Document API Events](https://api.onlyoffice.com/docs/plugins/interacting-with-editors/document-api/Events/) docs, `public/editor.html` wires the connector to:
