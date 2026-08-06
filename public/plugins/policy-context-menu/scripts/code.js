@@ -10,9 +10,10 @@
 
     // Wraps the whole paragraph under the cursor in a block-level content control (ApiBlockLvlSdt)
     // via the Document Builder API, so the tag survives as part of the .docx itself.
-    function addTagToSelection(tagValue, colorKey) {
+    function addTagToSelection(tagValue, colorKey, aliasLabel) {
         window.Asc.scope.tagValue = tagValue;
         window.Asc.scope.color = TAG_COLORS[colorKey] || TAG_COLORS.custom;
+        window.Asc.scope.aliasLabel = aliasLabel;
 
         window.Asc.plugin.callCommand(function () {
             try {
@@ -37,6 +38,9 @@
                 // only works for detached elements not yet added to the document).
                 var blockLvlSdt = oParagraph.InsertInContentControl(1);
                 blockLvlSdt.SetTag(Asc.scope.tagValue);
+                // Alias is the content control's native "Title": Word/ONLYOFFICE show it as a
+                // floating tab above the control when the cursor is placed inside it.
+                blockLvlSdt.SetAlias(Asc.scope.aliasLabel);
             } catch (e) {
                 console.error('[Policy Tagging] Failed to tag paragraph:', e);
             }
@@ -84,7 +88,7 @@
                 return;
             }
 
-            addTagToSelection('{policy:' + tagName + '}', 'custom');
+            addTagToSelection('{policy:' + tagName + '}', 'custom', tagName);
             input.value = '';
         };
     };
@@ -101,11 +105,11 @@
     });
 
     window.Asc.plugin.attachContextMenuClickEvent('policy_tag_review', function () {
-        addTagToSelection('{policy:needs-review}', 'needs-review');
+        addTagToSelection('{policy:needs-review}', 'needs-review', 'Needs Review');
     });
 
     window.Asc.plugin.attachContextMenuClickEvent('policy_tag_compliant', function () {
-        addTagToSelection('{policy:compliant}', 'compliant');
+        addTagToSelection('{policy:compliant}', 'compliant', 'Compliant');
     });
 
 })(window, undefined);
