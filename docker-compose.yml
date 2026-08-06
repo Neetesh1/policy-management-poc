@@ -40,6 +40,10 @@ services:
       # For remote access, set this to your server's IP or hostname + port 3005
       ONLYOFFICE_SERVER_URL: "http://localhost:3005"
 
+      # Internal URL this app uses to call the ONLYOFFICE Conversion API (POST /converter)
+      # directly from the backend — must use the Docker service name "onlyoffice"
+      ONLYOFFICE_DOCSERVER_INTERNAL_URL: "http://onlyoffice"
+
       JWT_SECRET: "${JWT_SECRET:-poc-secret-change-in-production}"
     volumes:
       # Persist documents and DB outside the container

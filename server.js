@@ -17,6 +17,10 @@ const APP_URL = process.env.APP_URL || 'http://localhost:3000';
 const ONLYOFFICE_APP_URL = process.env.ONLYOFFICE_APP_URL || APP_URL;
 // ONLYOFFICE_SERVER_URL: URL browser uses to load the ONLYOFFICE editor API script
 const ONLYOFFICE_SERVER_URL = process.env.ONLYOFFICE_SERVER_URL || 'http://localhost:8080';
+// ONLYOFFICE_DOCSERVER_INTERNAL_URL: URL this Node app uses to call the ONLYOFFICE
+// Conversion API (POST /converter) directly — in Docker use the service name
+// (e.g. http://onlyoffice), default = ONLYOFFICE_SERVER_URL for local dev.
+const ONLYOFFICE_DOCSERVER_INTERNAL_URL = process.env.ONLYOFFICE_DOCSERVER_INTERNAL_URL || ONLYOFFICE_SERVER_URL;
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
 // White-label branding (https://api.onlyoffice.com/docs/docs-api/usage-api/config/editor/customization/customization-white-label/)
@@ -174,6 +178,7 @@ app.get('/api/documents', (_req, res) => {
     db.documents.map(d => ({
       id: d.id,
       title: d.title,
+      extension: d.extension || '.docx',
       currentVersion: d.currentVersion,
       createdAt: d.createdAt,
       updatedAt: d.updatedAt
@@ -573,6 +578,101 @@ app.get('/download-version/:documentId/:versionNo', validateDocId, (req, res) =>
 
   const baseName = path.basename(doc.title, ext);
   res.download(filePath, `${baseName}_v${versionNumber}${ext}`);
+});
+
+/**
+ * POST /api/convert-to-word/:documentId
+ * Converts a PDF document to .docx via the ONLYOFFICE Conversion API
+ * (https://api.onlyoffice.com/docs/docs-api/additional-api/conversion-api/)
+ * and stores the result as a brand-new document (leaves the original PDF untouched).
+ */
+app.post('/api/convert-to-word/:documentId', validateDocId, async (req, res) => {
+  const { documentId } = req.params;
+  const db = readDB();
+  const doc = db.documents.find(d => d.id === documentId);
+  if (!doc) return res.status(404).json({ error: 'Document not found' });
+
+  if ((doc.extension || '.docx') !== '.pdf') {
+    return res.status(400).json({ error: 'Only PDF documents can be converted to Word' });
+  }
+
+  try {
+    // Short-lived token so the Document Server can fetch the source PDF
+    const fileToken = jwt.sign(
+      { documentId, action: 'read', version: doc.currentVersion },
+      JWT_SECRET,
+      { expiresIn: '10m' }
+    );
+
+    const conversionPayload = {
+      async: false,
+      filetype: 'pdf',
+      key: crypto.randomBytes(16).toString('hex'), // must be unique per conversion request
+      outputtype: 'docx',
+      title: doc.title,
+      url: `${ONLYOFFICE_APP_URL}/file/${documentId}?token=${encodeURIComponent(fileToken)}`
+    };
+    // Conversion API requires the whole request body signed as a JWT (server has JWT_ENABLED=true)
+    const convertToken = jwt.sign(conversionPayload, JWT_SECRET);
+
+    const convertResponse = await axios.post(
+      `${ONLYOFFICE_DOCSERVER_INTERNAL_URL}/converter`,
+      { ...conversionPayload, token: convertToken },
+      {
+        headers: { Authorization: `Bearer ${convertToken}`, Accept: 'application/json' },
+        timeout: 60000
+      }
+    );
+
+    const result = convertResponse.data;
+    if (result.error) {
+      console.error(`[convert] ConvertService error code ${result.error} for document ${documentId}`);
+      return res.status(502).json({ error: `Conversion failed (error code ${result.error})` });
+    }
+    if (!result.endConvert || !result.fileUrl) {
+      // Synchronous request should always finish, but guard against a slow/async response anyway
+      return res.status(202).json({ pending: true, percent: result.percent || 0 });
+    }
+
+    const fileResponse = await axios.get(result.fileUrl, {
+      responseType: 'arraybuffer',
+      timeout: 30000,
+      maxContentLength: 50 * 1024 * 1024
+    });
+
+    const newDocId = uuidv4();
+    const docDir = safePath(STORAGE_PATH, newDocId, 'versions');
+    fs.mkdirSync(docDir, { recursive: true });
+    const destPath = path.join(docDir, 'v1.docx');
+    fs.writeFileSync(destPath, fileResponse.data);
+
+    const fileHash = crypto.createHash('sha256').update(fileResponse.data).digest('hex');
+    const now = new Date().toISOString();
+    const newTitle = `${path.basename(doc.title, path.extname(doc.title))}.docx`;
+
+    const newDoc = {
+      id: newDocId,
+      title: newTitle,
+      extension: '.docx',
+      createdAt: now,
+      updatedAt: now,
+      currentVersion: 1,
+      versions: [
+        { versionNo: 1, filePath: destPath, fileHash, createdBy: 'user', createdAt: now }
+      ],
+      audit: [
+        { action: 'CONVERTED_FROM_PDF', versionNo: 1, userId: 'user', timestamp: now, sourceDocumentId: documentId }
+      ]
+    };
+
+    db.documents.push(newDoc);
+    writeDB(db);
+
+    res.json({ success: true, documentId: newDocId, title: newTitle });
+  } catch (err) {
+    console.error('[convert] Failed:', err.message);
+    res.status(500).json({ error: 'Conversion failed' });
+  }
 });
 
 // ── Error handler ──────────────────────────────────────────────────────────────
