@@ -8,6 +8,8 @@ const { v4: uuidv4, validate: uuidValidate } = require('uuid');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const JSZip = require('jszip');
+const { DOMParser, XMLSerializer } = require('@xmldom/xmldom');
 
 // ── Configuration ──────────────────────────────────────────────────────────────
 const JWT_SECRET = process.env.JWT_SECRET || 'poc-secret-change-in-production';
@@ -60,6 +62,50 @@ function safePath(base, ...parts) {
     throw new Error('Unsafe path detected');
   }
   return resolved;
+}
+
+// ── Clean export helper ─────────────────────────────────────────────────────────
+// Strips our policy/regulation content control tags (and their paragraph highlight)
+// plus all comments from a .docx buffer, without touching the stored/live version.
+async function stripTagsAndComments(fileBuffer) {
+  const zip = await JSZip.loadAsync(fileBuffer);
+  const docXmlFile = zip.file('word/document.xml');
+  if (!docXmlFile) return fileBuffer;
+
+  const xmlText = await docXmlFile.async('string');
+  const doc = new DOMParser().parseFromString(xmlText, 'text/xml');
+
+  // Drop comment anchors/references so no comments remain visible/linked.
+  ['w:commentRangeStart', 'w:commentRangeEnd', 'w:commentReference'].forEach(tagName => {
+    Array.from(doc.getElementsByTagName(tagName)).forEach(node => {
+      if (node.parentNode) node.parentNode.removeChild(node);
+    });
+  });
+
+  // Unwrap only the content controls our plugins created ({policy:...} / {regulation:...}),
+  // clearing the paragraph highlight too, and leaving any other native content controls intact.
+  Array.from(doc.getElementsByTagName('w:sdt')).forEach(sdt => {
+    const sdtPr = sdt.getElementsByTagName('w:sdtPr')[0];
+    const tagEl = sdtPr && sdtPr.getElementsByTagName('w:tag')[0];
+    const tagVal = tagEl && tagEl.getAttribute('w:val');
+    if (!tagVal || !/^\{(policy|regulation):/.test(tagVal)) return;
+
+    const sdtContent = sdt.getElementsByTagName('w:sdtContent')[0];
+    if (!sdtContent) return;
+
+    Array.from(sdtContent.getElementsByTagName('w:shd')).forEach(shd => {
+      if (shd.parentNode) shd.parentNode.removeChild(shd);
+    });
+
+    const parent = sdt.parentNode;
+    while (sdtContent.firstChild) {
+      parent.insertBefore(sdtContent.firstChild, sdt);
+    }
+    parent.removeChild(sdt);
+  });
+
+  zip.file('word/document.xml', new XMLSerializer().serializeToString(doc));
+  return zip.generateAsync({ type: 'nodebuffer' });
 }
 
 // ── Express app ────────────────────────────────────────────────────────────────
@@ -616,6 +662,40 @@ app.get('/download/:documentId', validateDocId, (req, res) => {
   if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found on disk' });
 
   res.download(filePath, doc.title);
+});
+
+/**
+ * GET /download-clean/:documentId
+ * Downloads the latest version with policy/regulation tags and comments stripped out —
+ * generated on the fly from the stored file; the original version on disk is untouched.
+ */
+app.get('/download-clean/:documentId', validateDocId, async (req, res) => {
+  const { documentId } = req.params;
+  const db = readDB();
+  const doc = db.documents.find(d => d.id === documentId);
+  if (!doc) return res.status(404).json({ error: 'Document not found' });
+
+  const latest = doc.versions.find(v => v.versionNo === doc.currentVersion);
+  if (!latest) return res.status(404).json({ error: 'File not found' });
+
+  const ext = doc.extension || '.docx';
+  if (ext !== '.docx') {
+    return res.status(400).json({ error: 'Clean export is only supported for .docx documents' });
+  }
+
+  const filePath = safePath(STORAGE_PATH, documentId, 'versions', `v${latest.versionNo}${ext}`);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found on disk' });
+
+  try {
+    const cleaned = await stripTagsAndComments(fs.readFileSync(filePath));
+    const baseName = path.basename(doc.title, ext);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="${baseName}_clean${ext}"`);
+    res.send(cleaned);
+  } catch (err) {
+    console.error('[download-clean] Failed:', err.message);
+    res.status(500).json({ error: 'Failed to generate clean export' });
+  }
 });
 
 /**

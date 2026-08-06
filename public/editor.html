@@ -353,6 +353,12 @@
           text: 'Tagged Paragraphs',
           hint: 'View all paragraph tags and regulations assigned in this document',
           onClick: () => showTagsPanel()
+        }, {
+          id: 'policyToolsCleanExportBtn',
+          type: 'button',
+          text: 'Download Clean Copy',
+          hint: 'Download the document with tags, regulations and comments stripped out',
+          onClick: () => window.open(`/download-clean/${documentId}`, '_blank')
         }];
 
         // ── Revision tracking: accept/reject tracked changes from outside the editor ──

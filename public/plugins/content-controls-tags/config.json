@@ -1,10 +1,10 @@
 {
-    "name" : "Example work with content controls tags",
+    "name" : "Tag List",
     "guid" : "asc.{C36DDFB5-08F0-4A68-B829-5FB1F7D49331}",
 
     "variations" : [
         {
-            "description" : "Example work with content controls tags",
+            "description" : "Tag List",
             "url"         : "index.html",
 
             "icons": [ "resources/light/icon.png", "resources/light/icon@2x.png" ],

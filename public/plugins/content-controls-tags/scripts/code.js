@@ -9,18 +9,6 @@
     var ArrContentControls = {};
 
     window.Asc.plugin.init = function() {
-        document.getElementById("buttonIDPaste").onclick = function() {
-            if (!$.isEmptyObject(ArrContentControls) && $('.label-selected').length) {
-                var tmpArr = ArrContentControls[$('.label-selected')[0].id].id;
-                for (var i = 0; i < tmpArr.length; i++) {
-                    window.Asc.plugin.executeMethod("SelectContentControl", [tmpArr[i]]);
-                    window.Asc.plugin.executeMethod("PasteText", ["Test paste for document"]);
-                }
-            } else {
-                window.Asc.plugin.executeMethod("PasteText", ["Test paste for document"]);
-            }
-        };
-
         document.getElementById("buttonIDGetAll").onclick = function() {
             window.Asc.plugin.executeMethod("GetAllContentControls");
             fBtnGetAll = true;
