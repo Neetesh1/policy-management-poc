@@ -374,24 +374,24 @@ app.get('/api/editor-config/:documentId', validateDocId, (req, res) => {
         about: WHITE_LABEL_SHOW_ABOUT,
         loaderName: WHITE_LABEL_LOADER_NAME,
         ...(WHITE_LABEL_LOADER_LOGO_URL ? { loaderLogo: WHITE_LABEL_LOADER_LOGO_URL } : {}),
-        // Hiding specific toolbar tabs (Plugins/Protection/View) requires the same commercial
+        // Hiding specific toolbar tabs (Protection/View) requires the same commercial
         // white-label license as the fields above — silently ignored without it (e.g. an
         // expired/missing license.lic). Home cannot be hidden per the ONLYOFFICE docs.
+        // Plugins tab is kept visible on purpose: with autostart disabled, it's the only
+        // way to manually launch Tag List / Policy Actions from the ribbon.
         layout: {
           toolbar: {
-            plugins: false,
             protect: false,
             view: false
           }
         }
       },
       plugins: {
-        // Both plugins must autostart: non-visual context-menu plugins still need their init()
-        // to run once to attach the onContextMenuShow listener, otherwise the menu never appears.
-        autostart: [
-          'asc.{C36DDFB5-08F0-4A68-B829-5FB1F7D49331}',
-          'asc.{B2C4D6E8-F0A1-4B3C-9D5E-7F8A9B0C1D2E}'
-        ],
+        // Neither plugin autostarts: both icons still show in the Plugins tab, but their
+        // panels stay hidden until the user clicks one — nothing opens automatically on load.
+        // Trade-off: Policy Actions' right-click "Policy Tagging" menu only attaches once its
+        // icon has been clicked at least once per session (init() is what wires the listener).
+        autostart: [],
         // Disables the built-in AI plugin/toolbar tab (bundled since ONLYOFFICE Docs 9.0.4).
         // plugins.disable requires no license — it fully blocks the plugin, not just hides UI.
         disable: [
