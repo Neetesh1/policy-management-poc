@@ -158,6 +158,16 @@ function validateDocId(req, res, next) {
   next();
 }
 
+// Static catalog of regulations that can be assigned to a paragraph/title (POC data).
+const REGULATIONS = [
+  { code: 'GDPR', name: 'General Data Protection Regulation' },
+  { code: 'HIPAA', name: 'Health Insurance Portability and Accountability Act' },
+  { code: 'CCPA', name: 'California Consumer Privacy Act' },
+  { code: 'SOX', name: 'Sarbanes-Oxley Act' },
+  { code: 'PCI-DSS', name: 'Payment Card Industry Data Security Standard' },
+  { code: 'ISO-27001', name: 'ISO/IEC 27001 Information Security Management' }
+];
+
 // ── Routes ─────────────────────────────────────────────────────────────────────
 
 /**
@@ -166,6 +176,14 @@ function validateDocId(req, res, next) {
  */
 app.get('/api/config', (_req, res) => {
   res.json({ onlyofficeServerUrl: ONLYOFFICE_SERVER_URL });
+});
+
+/**
+ * GET /api/regulations
+ * Returns the catalog of regulations that can be assigned to a paragraph/title.
+ */
+app.get('/api/regulations', (_req, res) => {
+  res.json(REGULATIONS);
 });
 
 /**
@@ -516,7 +534,7 @@ app.post('/api/audit-event/:documentId', validateDocId, (req, res) => {
  */
 app.post('/api/tags/:documentId', validateDocId, (req, res) => {
   const { documentId } = req.params;
-  const { tagKey, colorKey, contentControlId, userId } = req.body || {};
+  const { tagKey, colorKey, contentControlId, userId, tagType, label } = req.body || {};
 
   if (typeof tagKey !== 'string' || !tagKey.trim()) {
     return res.status(400).json({ error: 'tagKey is required' });
@@ -529,6 +547,8 @@ app.post('/api/tags/:documentId', validateDocId, (req, res) => {
   const tag = {
     id: uuidv4(),
     tagKey: tagKey.slice(0, 200),
+    tagType: typeof tagType === 'string' ? tagType.slice(0, 50) : 'policy',
+    label: typeof label === 'string' ? label.slice(0, 200) : tagKey.slice(0, 200),
     colorKey: typeof colorKey === 'string' ? colorKey.slice(0, 50) : 'custom',
     contentControlId: contentControlId != null ? String(contentControlId).slice(0, 100) : null,
     userId: typeof userId === 'string' ? userId.slice(0, 100) : 'unknown',

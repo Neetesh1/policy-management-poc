@@ -5,7 +5,8 @@
     var TAG_COLORS = {
         'needs-review': [255, 235, 156],
         'compliant': [198, 239, 206],
-        'custom': [198, 224, 255]
+        'custom': [198, 224, 255],
+        'regulation': [225, 213, 245]
     };
 
     // Wraps the whole paragraph under the cursor in a block-level content control (ApiBlockLvlSdt)
@@ -80,6 +81,47 @@
     window.Asc.plugin.init = function () {
         var input = document.getElementById('customTagInput');
         var btn = document.getElementById('customTagBtn');
+        var reviewBtn = document.getElementById('quickTagReview');
+        var compliantBtn = document.getElementById('quickTagCompliant');
+        var regulationSelect = document.getElementById('regulationSelect');
+        var assignRegulationBtn = document.getElementById('assignRegulationBtn');
+
+        // Populate the regulation dropdown from the app's catalog (same origin as this plugin).
+        fetch('/api/regulations')
+            .then(function (res) { return res.json(); })
+            .then(function (regulations) {
+                regulationSelect.innerHTML = '';
+                regulations.forEach(function (r) {
+                    var opt = document.createElement('option');
+                    opt.value = r.code;
+                    opt.textContent = r.code + ' — ' + r.name;
+                    opt.dataset.name = r.name;
+                    regulationSelect.appendChild(opt);
+                });
+            })
+            .catch(function (err) {
+                console.warn('[Policy Tagging] Failed to load regulations:', err);
+                regulationSelect.innerHTML = '<option value="">Failed to load regulations</option>';
+            });
+
+        assignRegulationBtn.onclick = function () {
+            var code = regulationSelect.value;
+            if (!code) {
+                regulationSelect.focus();
+                return;
+            }
+            var opt = regulationSelect.options[regulationSelect.selectedIndex];
+            var name = (opt && opt.dataset.name) || code;
+            addTagToSelection('{regulation:' + code + '}', 'regulation', code + ' — ' + name);
+        };
+
+        reviewBtn.onclick = function () {
+            addTagToSelection('{policy:needs-review}', 'needs-review', 'Needs Review');
+        };
+
+        compliantBtn.onclick = function () {
+            addTagToSelection('{policy:compliant}', 'compliant', 'Compliant');
+        };
 
         btn.onclick = function () {
             var tagName = (input.value || '').trim();

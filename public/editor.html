@@ -200,17 +200,108 @@
       // linked to this document via documentId — replaces the old in-doc Word comment.
       const POLICY_TAG_COLORS = new Set(['needs-review', 'compliant']);
       function persistPolicyTag(obj, userId) {
-        const match = /^\{policy:(.+)\}$/.exec((obj && obj.tag) || '');
-        if (!match) return;
+        const tagStr = (obj && obj.tag) || '';
+        const policyMatch = /^\{policy:(.+)\}$/.exec(tagStr);
+        const regulationMatch = /^\{regulation:(.+)\}$/.exec(tagStr);
 
-        const tagKey = match[1];
-        const colorKey = POLICY_TAG_COLORS.has(tagKey) ? tagKey : 'custom';
+        let tagType, tagKey, colorKey;
+        if (regulationMatch) {
+          tagType = 'regulation';
+          tagKey = regulationMatch[1];
+          colorKey = 'regulation';
+        } else if (policyMatch) {
+          tagType = 'policy';
+          tagKey = policyMatch[1];
+          colorKey = POLICY_TAG_COLORS.has(tagKey) ? tagKey : 'custom';
+        } else {
+          return;
+        }
+
         fetch(`/api/tags/${documentId}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tagKey, colorKey, contentControlId: obj.id, userId })
+          body: JSON.stringify({ tagKey, tagType, colorKey, contentControlId: obj.id, userId })
         }).catch(err => console.warn('[Policy Tagging] failed to persist tag:', err));
       }
+
+      // ── Tagged Paragraphs panel: reads straight from the custom DB (server-side),
+      // avoiding the native plugin's GetAllContentControls list which can go stale
+      // until a full page reload. "Go to" jumps to the paragraph via the connector.
+      function ensureTagsPanel() {
+        let panel = document.getElementById('tagsPanel');
+        if (panel) return panel;
+
+        panel = document.createElement('div');
+        panel.id = 'tagsPanel';
+        panel.style.cssText = 'position:absolute;top:12px;right:12px;width:320px;max-height:70vh;' +
+          'overflow-y:auto;background:#fff;border-radius:10px;box-shadow:0 8px 28px rgba(0,0,0,.25);' +
+          'z-index:30;display:none;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;';
+        panel.innerHTML = `
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid #e8ecf2;">
+            <strong style="font-size:14px;color:#1b2b4b;">Tagged Paragraphs</strong>
+            <div>
+              <button id="tagsPanelRefresh" style="border:none;background:none;cursor:pointer;font-size:12px;color:#1565c0;margin-right:8px;">Refresh</button>
+              <button id="tagsPanelClose" style="border:none;background:none;cursor:pointer;font-size:14px;color:#94a3b8;">&times;</button>
+            </div>
+          </div>
+          <div id="tagsPanelList" style="padding:8px 14px;"></div>`;
+        document.getElementById('editorWrap').appendChild(panel);
+
+        document.getElementById('tagsPanelClose').onclick = () => { panel.style.display = 'none'; };
+        document.getElementById('tagsPanelRefresh').onclick = () => loadTagsPanel();
+        return panel;
+      }
+
+      async function loadTagsPanel() {
+        const list = document.getElementById('tagsPanelList');
+        list.innerHTML = '<p style="font-size:12px;color:#94a3b8;text-align:center;padding:12px 0;">Loading…</p>';
+        try {
+          const res = await fetch(`/api/tags/${documentId}`);
+          const tags = await res.json();
+
+          if (!Array.isArray(tags) || tags.length === 0) {
+            list.innerHTML = '<p style="font-size:12px;color:#94a3b8;text-align:center;padding:12px 0;">No tags yet.</p>';
+            return;
+          }
+
+          list.innerHTML = tags.map(t => `
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f0f2f6;">
+              <div style="min-width:0;">
+                <div style="font-size:12px;font-weight:600;color:#1b2b4b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                  ${t.tagType === 'regulation' ? '📋' : '🏷️'} ${escapeHtmlLocal(t.label || t.tagKey)}
+                </div>
+                <div style="font-size:11px;color:#94a3b8;">${escapeHtmlLocal(t.userId)} · ${new Date(t.createdAt).toLocaleString()}</div>
+              </div>
+              <button class="tagGoToBtn" data-cc-id="${escapeHtmlLocal(t.contentControlId || '')}"
+                style="border:1px solid #d0d7e2;background:#fff;border-radius:6px;padding:4px 8px;font-size:11px;cursor:pointer;flex-shrink:0;margin-left:8px;">
+                Go to
+              </button>
+            </div>`).join('');
+
+          list.querySelectorAll('.tagGoToBtn').forEach(btn => {
+            btn.onclick = () => {
+              const ccId = btn.getAttribute('data-cc-id');
+              if (!ccId || !automationConnector) return;
+              automationConnector.executeMethod('SelectContentControl', [ccId]);
+            };
+          });
+        } catch (err) {
+          list.innerHTML = '<p style="font-size:12px;color:#c0392b;text-align:center;padding:12px 0;">Failed to load tags.</p>';
+        }
+      }
+
+      function escapeHtmlLocal(text) {
+        const d = document.createElement('div');
+        d.appendChild(document.createTextNode(String(text == null ? '' : text)));
+        return d.innerHTML;
+      }
+
+      function showTagsPanel() {
+        const panel = ensureTagsPanel();
+        panel.style.display = 'block';
+        loadTagsPanel();
+      }
+
 
       function initAutomationConnector(docEditorInstance, meta) {
         if (!docEditorInstance || typeof docEditorInstance.createConnector !== 'function') return;
@@ -256,6 +347,12 @@
           text: 'Document Info',
           hint: 'Show policy document metadata (via Automation API)',
           onClick: () => showPolicyInfoPanel(meta)
+        }, {
+          id: 'policyToolsTagsBtn',
+          type: 'button',
+          text: 'Tagged Paragraphs',
+          hint: 'View all paragraph tags and regulations assigned in this document',
+          onClick: () => showTagsPanel()
         }];
 
         // ── Revision tracking: accept/reject tracked changes from outside the editor ──
