@@ -359,6 +359,12 @@
           text: 'Download Clean Copy',
           hint: 'Download the document with tags, regulations and comments stripped out',
           onClick: () => window.open(`/download-clean/${documentId}`, '_blank')
+        }, {
+          id: 'policyToolsCompareBtn',
+          type: 'button',
+          text: 'Compare Versions',
+          hint: 'Show additions/removals between an older version and the current one',
+          onClick: () => showComparePanel(docEditorInstance)
         }];
 
         // ── Revision tracking: accept/reject tracked changes from outside the editor ──
@@ -426,6 +432,125 @@
         }
       }
 
+      // ── Native ONLYOFFICE Version History (like SharePoint's built-in history panel) ──
+      // https://api.onlyoffice.com/docs/docs-api/usage-api/config/editor/events/onrequesthistory/
+      // Wiring these events is what makes DocsAPI show the History icon/panel and
+      // enables the Restore action, backed by our own /api/history + /history-file routes.
+      async function loadHistory() {
+        const res = await fetch(`/api/history/${documentId}`);
+        if (!res.ok) throw new Error('Failed to load version history');
+        return res.json();
+      }
+
+      async function handleRequestHistory(docEditorInstance) {
+        try {
+          const data = await loadHistory();
+          const current = data.history.find(h => h.version === data.currentVersion) || data.history[data.history.length - 1];
+          docEditorInstance.refreshHistory({ currentVersion: current, history: data.history });
+        } catch (err) {
+          console.warn('[Version History] refreshHistory failed:', err);
+        }
+      }
+
+      async function handleRequestHistoryData(docEditorInstance, event) {
+        try {
+          const version = event.data;
+          const res = await fetch(`/api/history-data/${documentId}/${version}`);
+          if (!res.ok) throw new Error('Failed to load version data');
+          const data = await res.json();
+          docEditorInstance.setHistoryData(data);
+        } catch (err) {
+          console.warn('[Version History] setHistoryData failed:', err);
+        }
+      }
+
+      async function handleRequestRestore(userId, event) {
+        try {
+          await fetch(`/api/restore-version/${documentId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ versionNo: event.data.version, userId })
+          });
+        } catch (err) {
+          console.warn('[Version History] restore failed:', err);
+        }
+        // Restoring creates a new latest version on the server, so reload to load it live.
+        window.location.reload();
+      }
+
+      function handleRequestHistoryClose() {
+        window.location.reload();
+      }
+
+      // ── Compare with Current Version: shows a real added/removed diff (as tracked
+      // changes) between an older version and what's currently open, via ONLYOFFICE's
+      // built-in "Compare Documents" (setRevisedFile) — distinct from Version History,
+      // which only lets you preview/restore an old version rather than diff it.
+      function ensureComparePanel() {
+        let panel = document.getElementById('comparePanel');
+        if (panel) return panel;
+
+        panel = document.createElement('div');
+        panel.id = 'comparePanel';
+        panel.style.cssText = 'position:absolute;top:12px;right:12px;width:320px;max-height:70vh;' +
+          'overflow-y:auto;background:#fff;border-radius:10px;box-shadow:0 8px 28px rgba(0,0,0,.25);' +
+          'z-index:30;display:none;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;';
+        panel.innerHTML = `
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid #e8ecf2;">
+            <strong style="font-size:14px;color:#1b2b4b;">Compare Versions</strong>
+            <button id="comparePanelClose" style="border:none;background:none;cursor:pointer;font-size:14px;color:#94a3b8;">&times;</button>
+          </div>
+          <p style="font-size:11px;color:#94a3b8;padding:8px 14px 0;">Shows additions/removals vs. the version currently open, as tracked changes.</p>
+          <div id="comparePanelList" style="padding:8px 14px;"></div>`;
+        document.getElementById('editorWrap').appendChild(panel);
+
+        document.getElementById('comparePanelClose').onclick = () => { panel.style.display = 'none'; };
+        return panel;
+      }
+
+      async function loadComparePanel(docEditorInstance) {
+        const list = document.getElementById('comparePanelList');
+        list.innerHTML = '<p style="font-size:12px;color:#94a3b8;text-align:center;padding:12px 0;">Loading…</p>';
+        try {
+          const res = await fetch(`/versions/${documentId}`);
+          const data = await res.json();
+
+          list.innerHTML = data.versions.map(v => `
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f0f2f6;">
+              <div style="min-width:0;">
+                <div style="font-size:12px;font-weight:600;color:#1b2b4b;">v${v.versionNo}${v.versionNo === data.currentVersion ? ' (current)' : ''}</div>
+                <div style="font-size:11px;color:#94a3b8;">${escapeHtmlLocal(v.createdBy)} · ${new Date(v.createdAt).toLocaleString()}</div>
+              </div>
+              <button class="compareBtn" data-version="${v.versionNo}" ${v.versionNo === data.currentVersion ? 'disabled' : ''}
+                style="border:1px solid #d0d7e2;background:${v.versionNo === data.currentVersion ? '#f0f2f6' : '#fff'};border-radius:6px;padding:4px 8px;font-size:11px;cursor:pointer;flex-shrink:0;margin-left:8px;">
+                Compare
+              </button>
+            </div>`).join('');
+
+          list.querySelectorAll('.compareBtn:not([disabled])').forEach(btn => {
+            btn.onclick = async () => {
+              const versionNo = btn.getAttribute('data-version');
+              try {
+                const dataRes = await fetch(`/api/history-data/${documentId}/${versionNo}`);
+                const versionData = await dataRes.json();
+                docEditorInstance.setRevisedFile(versionData.url);
+                document.getElementById('comparePanel').style.display = 'none';
+              } catch (err) {
+                console.warn('[Compare Versions] setRevisedFile failed:', err);
+              }
+            };
+          });
+        } catch (err) {
+          list.innerHTML = '<p style="font-size:12px;color:#c0392b;text-align:center;padding:12px 0;">Failed to load versions.</p>';
+        }
+      }
+
+      function showComparePanel(docEditorInstance) {
+        const panel = ensureComparePanel();
+        panel.style.display = 'block';
+        loadComparePanel(docEditorInstance);
+      }
+
       async function initEditor() {
         try {
           // 1. Fetch app config (ONLYOFFICE server URL)
@@ -463,7 +588,11 @@
           // elements from outside the editor rather than toggle native chrome. Wired up once the
           // document is ready; functions can't travel through the signed JSON config, so it's attached here.
           editorConfig.events = {
-            onDocumentReady: () => initAutomationConnector(docEditorInstance, { title, role: editorConfig.role, user: editorConfig.user })
+            onDocumentReady: () => initAutomationConnector(docEditorInstance, { title, role: editorConfig.role, user: editorConfig.user }),
+            onRequestHistory: () => handleRequestHistory(docEditorInstance),
+            onRequestHistoryData: (event) => handleRequestHistoryData(docEditorInstance, event),
+            onRequestRestore: (event) => handleRequestRestore(editorConfig.user && editorConfig.user.id, event),
+            onRequestHistoryClose: () => handleRequestHistoryClose()
           };
 
           // 3. Dynamically load the ONLYOFFICE API script from the Document Server

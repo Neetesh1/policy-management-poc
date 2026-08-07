@@ -620,6 +620,175 @@ app.get('/api/tags/:documentId', validateDocId, (req, res) => {
 });
 
 /**
+ * GET /history-file/:documentId/:versionNo?token=<jwt>
+ * Serves a specific historical version's file to ONLYOFFICE's native Version
+ * History panel (used by refreshHistory/setHistoryData "url" fields).
+ */
+app.get('/history-file/:documentId/:versionNo', validateDocId, (req, res) => {
+  const { documentId, versionNo } = req.params;
+  const rawToken = req.query.token;
+  if (!rawToken) return res.status(401).json({ error: 'Token required' });
+  try {
+    jwt.verify(rawToken, JWT_SECRET);
+  } catch {
+    return res.status(401).json({ error: 'Invalid or expired token' });
+  }
+
+  const versionNumber = parseInt(versionNo, 10);
+  const db = readDB();
+  const doc = db.documents.find(d => d.id === documentId);
+  if (!doc) return res.status(404).json({ error: 'Document not found' });
+
+  const version = doc.versions.find(v => v.versionNo === versionNumber);
+  if (!version) return res.status(404).json({ error: 'Version not found' });
+
+  const ext = doc.extension || '.docx';
+  const filePath = safePath(STORAGE_PATH, documentId, 'versions', `v${versionNumber}${ext}`);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found on disk' });
+
+  const { mimeType } = getDocMeta(ext);
+  res.setHeader('Content-Type', mimeType);
+  res.download(filePath, doc.title);
+});
+
+/**
+ * GET /api/history/:documentId
+ * Returns the document's version history shaped for ONLYOFFICE's native Version
+ * History panel (docEditor.refreshHistory / setHistoryData).
+ * https://api.onlyoffice.com/docs/docs-api/usage-api/config/editor/events/onrequesthistory/
+ */
+app.get('/api/history/:documentId', validateDocId, (req, res) => {
+  const { documentId } = req.params;
+  const db = readDB();
+  const doc = db.documents.find(d => d.id === documentId);
+  if (!doc) return res.status(404).json({ error: 'Document not found' });
+
+  const ext = doc.extension || '.docx';
+  const { fileType } = getDocMeta(ext);
+
+  const history = doc.versions.map(v => {
+    const fileToken = jwt.sign(
+      { documentId, action: 'read', version: v.versionNo },
+      JWT_SECRET,
+      { expiresIn: '2h' }
+    );
+    const userInfo = { id: v.createdBy, name: v.createdBy };
+    return {
+      version: v.versionNo,
+      key: `${documentId.replace(/-/g, '')}_v${v.versionNo}`,
+      created: v.createdAt,
+      user: userInfo,
+      changes: [{ created: v.createdAt, user: userInfo }],
+      fileType,
+      url: `${ONLYOFFICE_APP_URL}/history-file/${documentId}/${v.versionNo}?token=${encodeURIComponent(fileToken)}`
+    };
+  });
+
+  res.json({ currentVersion: doc.currentVersion, history });
+});
+
+/**
+ * GET /api/history-data/:documentId/:versionNo
+ * Returns a single version shaped + signed for docEditor.setHistoryData(). ONLYOFFICE
+ * verifies this payload's own JWT (not just the file URL's), so it must be signed here.
+ */
+app.get('/api/history-data/:documentId/:versionNo', validateDocId, (req, res) => {
+  const { documentId, versionNo } = req.params;
+  const versionNumber = parseInt(versionNo, 10);
+  if (isNaN(versionNumber) || versionNumber < 1) {
+    return res.status(400).json({ error: 'Invalid version number' });
+  }
+
+  const db = readDB();
+  const doc = db.documents.find(d => d.id === documentId);
+  if (!doc) return res.status(404).json({ error: 'Document not found' });
+
+  const version = doc.versions.find(v => v.versionNo === versionNumber);
+  if (!version) return res.status(404).json({ error: 'Version not found' });
+
+  const ext = doc.extension || '.docx';
+  const { fileType } = getDocMeta(ext);
+  const sorted = [...doc.versions].sort((a, b) => a.versionNo - b.versionNo);
+  const idx = sorted.findIndex(v => v.versionNo === versionNumber);
+  const previousVersion = idx > 0 ? sorted[idx - 1] : null;
+
+  function fileUrlFor(v) {
+    const fileToken = jwt.sign(
+      { documentId, action: 'read', version: v.versionNo },
+      JWT_SECRET,
+      { expiresIn: '2h' }
+    );
+    return `${ONLYOFFICE_APP_URL}/history-file/${documentId}/${v.versionNo}?token=${encodeURIComponent(fileToken)}`;
+  }
+
+  const payload = {
+    version: version.versionNo,
+    key: `${documentId.replace(/-/g, '')}_v${version.versionNo}`,
+    fileType,
+    url: fileUrlFor(version)
+  };
+  if (previousVersion) {
+    payload.previous = {
+      fileType,
+      key: `${documentId.replace(/-/g, '')}_v${previousVersion.versionNo}`,
+      url: fileUrlFor(previousVersion)
+    };
+  }
+
+  // The whole payload (not just the file URL) must be JWT-signed for setHistoryData.
+  const token = jwt.sign(payload, JWT_SECRET);
+  res.json({ ...payload, token });
+});
+
+/**
+ * POST /api/restore-version/:documentId
+ * Restores an older version by copying it forward as a brand-new latest version —
+ * non-destructive, every prior version stays on disk and in the history list.
+ */
+app.post('/api/restore-version/:documentId', validateDocId, (req, res) => {
+  const { documentId } = req.params;
+  const { versionNo, userId } = req.body || {};
+  const versionNumber = parseInt(versionNo, 10);
+
+  if (isNaN(versionNumber) || versionNumber < 1) {
+    return res.status(400).json({ error: 'Invalid version number' });
+  }
+
+  const db = readDB();
+  const doc = db.documents.find(d => d.id === documentId);
+  if (!doc) return res.status(404).json({ error: 'Document not found' });
+
+  const sourceVersion = doc.versions.find(v => v.versionNo === versionNumber);
+  if (!sourceVersion) return res.status(404).json({ error: 'Version not found' });
+
+  const ext = doc.extension || '.docx';
+  const sourcePath = safePath(STORAGE_PATH, documentId, 'versions', `v${versionNumber}${ext}`);
+  if (!fs.existsSync(sourcePath)) return res.status(404).json({ error: 'Version file not found on disk' });
+
+  const newVersionNo = doc.currentVersion + 1;
+  const destPath = safePath(STORAGE_PATH, documentId, 'versions', `v${newVersionNo}${ext}`);
+  fs.copyFileSync(sourcePath, destPath);
+
+  const fileHash = crypto.createHash('sha256').update(fs.readFileSync(destPath)).digest('hex');
+  const now = new Date().toISOString();
+  const restoredBy = typeof userId === 'string' ? userId.slice(0, 100) : 'user';
+
+  doc.versions.push({ versionNo: newVersionNo, filePath: destPath, fileHash, createdBy: restoredBy, createdAt: now });
+  doc.currentVersion = newVersionNo;
+  doc.updatedAt = now;
+  doc.audit.push({
+    action: 'VERSION_RESTORED',
+    versionNo: newVersionNo,
+    userId: restoredBy,
+    meta: { restoredFrom: versionNumber },
+    timestamp: now
+  });
+  writeDB(db);
+
+  res.json({ success: true, newVersionNo });
+});
+
+/**
  * GET /versions/:documentId
  * Returns the full version history and audit log for a document.
  */
