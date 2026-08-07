@@ -533,7 +533,9 @@
               try {
                 const dataRes = await fetch(`/api/history-data/${documentId}/${versionNo}`);
                 const versionData = await dataRes.json();
-                docEditorInstance.setRevisedFile(versionData.url);
+                // setRevisedFile mutates its argument (sets .c = 'compare' internally),
+                // so it must be an object — passing a raw URL string throws inside ONLYOFFICE.
+                docEditorInstance.setRevisedFile({ url: versionData.url, fileType: versionData.fileType || 'docx' });
                 document.getElementById('comparePanel').style.display = 'none';
               } catch (err) {
                 console.warn('[Compare Versions] setRevisedFile failed:', err);

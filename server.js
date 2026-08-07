@@ -471,7 +471,12 @@ app.post('/onlyoffice/callback/:documentId', validateDocId, async (req, res) => 
     }
 
     try {
-      const fileResponse = await axios.get(body.url, {
+      // body.url points at ONLYOFFICE_SERVER_URL (the browser-facing host), which isn't
+      // reachable from inside this container — rewrite it to the internal Docker service
+      // so we can actually fetch the saved file instead of getting ECONNREFUSED, which
+      // silently fails every save and leaves the doc server's cache in a broken state.
+      const internalFileUrl = body.url.replace(/^https?:\/\/[^/]+/, ONLYOFFICE_DOCSERVER_INTERNAL_URL);
+      const fileResponse = await axios.get(internalFileUrl, {
         responseType: 'arraybuffer',
         timeout: 30000,
         maxContentLength: 50 * 1024 * 1024
@@ -680,7 +685,9 @@ app.get('/api/history/:documentId', validateDocId, (req, res) => {
       user: userInfo,
       changes: [{ created: v.createdAt, user: userInfo }],
       fileType,
-      url: `${ONLYOFFICE_APP_URL}/history-file/${documentId}/${v.versionNo}?token=${encodeURIComponent(fileToken)}`
+      // Extension appended after the version number (parseInt ignores it) so ONLYOFFICE's
+      // "direct link to file" validation accepts the URL (it checks for a recognizable extension).
+      url: `${ONLYOFFICE_APP_URL}/history-file/${documentId}/${v.versionNo}${ext}?token=${encodeURIComponent(fileToken)}`
     };
   });
 
@@ -718,7 +725,9 @@ app.get('/api/history-data/:documentId/:versionNo', validateDocId, (req, res) =>
       JWT_SECRET,
       { expiresIn: '2h' }
     );
-    return `${ONLYOFFICE_APP_URL}/history-file/${documentId}/${v.versionNo}?token=${encodeURIComponent(fileToken)}`;
+    // Extension appended after the version number (parseInt ignores it) so ONLYOFFICE's
+    // "direct link to file" validation accepts the URL (it checks for a recognizable extension).
+    return `${ONLYOFFICE_APP_URL}/history-file/${documentId}/${v.versionNo}${ext}?token=${encodeURIComponent(fileToken)}`;
   }
 
   const payload = {
