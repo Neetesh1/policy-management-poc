@@ -5,7 +5,8 @@ services:
     image: onlyoffice/documentserver-de:latest
     container_name: onlyoffice-docs
     ports:
-      - "3005:80"
+      # Set ONLYOFFICE_HOST_PORT in .env to change the host-side port (default: 3005 for local, 8080 for server)
+      - "${ONLYOFFICE_HOST_PORT:-3005}:80"
     environment:
       JWT_ENABLED: "true"
       JWT_SECRET: "${JWT_SECRET:-poc-secret-change-in-production}"
@@ -24,25 +25,25 @@ services:
     build: .
     container_name: onlyoffice-app
     ports:
-      - "4211:3000"
+      # Set APP_HOST_PORT in .env to change the host-side port (default: 4211 for local, 3000 for server)
+      - "${APP_HOST_PORT:-4211}:3000"
     environment:
       NODE_ENV: production
       PORT: "3000"
 
-      # Public URL that the browser uses to reach this app
-      APP_URL: "http://localhost:4211"
+      # Public URL that the browser uses to reach this app — set APP_URL in .env
+      APP_URL: "${APP_URL:-http://localhost:4211}"
 
       # Internal URL that ONLYOFFICE server uses to fetch files & send callbacks
       # Must use the Docker service name "app" so containers can reach each other
-      ONLYOFFICE_APP_URL: "http://app:3000"
+      ONLYOFFICE_APP_URL: "${ONLYOFFICE_APP_URL:-http://app:3000}"
 
-      # URL the browser uses to load the ONLYOFFICE editor API script
-      # For remote access, set this to your server's IP or hostname + port 3005
-      ONLYOFFICE_SERVER_URL: "http://localhost:3005"
+      # URL the browser uses to load the ONLYOFFICE editor API script — set ONLYOFFICE_SERVER_URL in .env
+      ONLYOFFICE_SERVER_URL: "${ONLYOFFICE_SERVER_URL:-http://localhost:3005}"
 
       # Internal URL this app uses to call the ONLYOFFICE Conversion API (POST /converter)
       # directly from the backend — must use the Docker service name "onlyoffice"
-      ONLYOFFICE_DOCSERVER_INTERNAL_URL: "http://onlyoffice"
+      ONLYOFFICE_DOCSERVER_INTERNAL_URL: "${ONLYOFFICE_DOCSERVER_INTERNAL_URL:-http://onlyoffice}"
 
       JWT_SECRET: "${JWT_SECRET:-poc-secret-change-in-production}"
     volumes:
